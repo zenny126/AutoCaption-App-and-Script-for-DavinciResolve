@@ -65,7 +65,7 @@ local function showMessage(title, message, askYesNo)
 end
 
 -- ============================================================
--- File picker (Windows: PowerShell OpenFileDialog)
+-- File picker - chọn file đầu vào
 -- ============================================================
 local function pickFile()
     if isWindows then
@@ -107,9 +107,51 @@ local function pickFile()
 end
 
 -- ============================================================
--- Dialog to select input audio/video language & settings
+-- Folder picker - chọn thư mục lưu file SRT thủ công
 -- ============================================================
-local function pickLanguage()
+local function pickSaveFolder(defaultPath)
+    if isWindows then
+        local tmpPs1 = os.getenv("TEMP") .. "\\autocaption_vec_pickfolder.ps1"
+        local tmpOut = os.getenv("TEMP") .. "\\autocaption_vec_pickfolder_result.txt"
+
+        local f = io.open(tmpPs1, "w")
+        f:write("Add-Type -AssemblyName System.Windows.Forms\n")
+        f:write("$dlg = New-Object System.Windows.Forms.FolderBrowserDialog\n")
+        f:write("$dlg.Description = 'Select folder to save SRT subtitle file(s)'\n")
+        f:write("$dlg.SelectedPath = '" .. (defaultPath or os.getenv("USERPROFILE") or "C:\\") .. "'\n")
+        f:write("if ($dlg.ShowDialog() -eq 'OK') {\n")
+        f:write("  Set-Content -Path '" .. tmpOut .. "' -Value $dlg.SelectedPath\n")
+        f:write("} else {\n")
+        f:write("  Set-Content -Path '" .. tmpOut .. "' -Value ''\n")
+        f:write("}\n")
+        f:close()
+
+        os.execute('powershell -NoProfile -ExecutionPolicy Bypass -File "' .. tmpPs1 .. '"')
+
+        local result = ""
+        local rf = io.open(tmpOut, "r")
+        if rf then
+            result = rf:read("*l") or ""
+            rf:close()
+            os.remove(tmpOut)
+        end
+        os.remove(tmpPs1)
+        if result == "" then return nil end
+        return result
+    else
+        local osaCmd = "osascript -e 'POSIX path of (choose folder with prompt \"Select folder to save SRT file(s)\")'"
+        local f = io.popen(osaCmd)
+        local result = f and f:read("*l") or ""
+        if f then f:close() end
+        if result == "" then return nil end
+        return result
+    end
+end
+
+-- ============================================================
+-- Dialog chọn ngôn ngữ, model, số file xuất
+-- ============================================================
+local function pickSettings()
     if isWindows then
         local tmpPs1 = os.getenv("TEMP") .. "\\autocaption_vec_picklang.ps1"
         local tmpOut = os.getenv("TEMP") .. "\\autocaption_vec_picklang_result.txt"
@@ -128,14 +170,12 @@ $form.MaximizeBox = $false
 $form.MinimizeBox = $false
 $form.Topmost = $true
 
-# Language Label
 $langLabel = New-Object System.Windows.Forms.Label
 $langLabel.Text = "Source Language:"
 $langLabel.Location = New-Object System.Drawing.Point(20,20)
 $langLabel.Size = New-Object System.Drawing.Size(150,20)
 $form.Controls.Add($langLabel)
 
-# Language Dropdown
 $langDropdown = New-Object System.Windows.Forms.ComboBox
 $langDropdown.Items.AddRange(@("Vietnamese", "English", "Chinese", "Auto-detect"))
 $langDropdown.SelectedIndex = 3
@@ -144,14 +184,12 @@ $langDropdown.Size = New-Object System.Drawing.Size(280,25)
 $langDropdown.DropDownStyle = "DropDownList"
 $form.Controls.Add($langDropdown)
 
-# Model Label
 $modelLabel = New-Object System.Windows.Forms.Label
 $modelLabel.Text = "Model:"
 $modelLabel.Location = New-Object System.Drawing.Point(20,60)
 $modelLabel.Size = New-Object System.Drawing.Size(150,20)
 $form.Controls.Add($modelLabel)
 
-# Model Dropdown
 $modelDropdown = New-Object System.Windows.Forms.ComboBox
 $modelDropdown.Items.AddRange(@("tiny", "base", "small", "medium", "large-v3"))
 $modelDropdown.SelectedIndex = 3
@@ -160,14 +198,12 @@ $modelDropdown.Size = New-Object System.Drawing.Size(280,25)
 $modelDropdown.DropDownStyle = "DropDownList"
 $form.Controls.Add($modelDropdown)
 
-# Output Files Label
 $outputLabel = New-Object System.Windows.Forms.Label
 $outputLabel.Text = "Output Files:"
 $outputLabel.Location = New-Object System.Drawing.Point(20,100)
 $outputLabel.Size = New-Object System.Drawing.Size(150,20)
 $form.Controls.Add($outputLabel)
 
-# Output Files Dropdown
 $outputDropdown = New-Object System.Windows.Forms.ComboBox
 $outputDropdown.Items.AddRange(@("1 File (Original only)", "2 Files (Original + Translation)"))
 $outputDropdown.SelectedIndex = 0
@@ -176,7 +212,6 @@ $outputDropdown.Size = New-Object System.Drawing.Size(280,25)
 $outputDropdown.DropDownStyle = "DropDownList"
 $form.Controls.Add($outputDropdown)
 
-# Translation Language Label
 $transLabel = New-Object System.Windows.Forms.Label
 $transLabel.Text = "Translation Language:"
 $transLabel.Location = New-Object System.Drawing.Point(20,140)
@@ -184,9 +219,8 @@ $transLabel.Size = New-Object System.Drawing.Size(150,20)
 $transLabel.Enabled = $false
 $form.Controls.Add($transLabel)
 
-# Translation Language Dropdown
 $transDropdown = New-Object System.Windows.Forms.ComboBox
-$transDropdown.Items.AddRange(@("English", "Vietnamese", "Spanish", "French", "German", "Chinese", "Japanese", "Korean"))
+$transDropdown.Items.AddRange(@("English", "Vietnamese", "Chinese", "Spanish", "French", "German", "Japanese", "Korean"))
 $transDropdown.SelectedIndex = 0
 $transDropdown.Location = New-Object System.Drawing.Point(180,140)
 $transDropdown.Size = New-Object System.Drawing.Size(280,25)
@@ -194,18 +228,12 @@ $transDropdown.DropDownStyle = "DropDownList"
 $transDropdown.Enabled = $false
 $form.Controls.Add($transDropdown)
 
-# Event: Enable/Disable translation language based on output format
 $outputDropdown.Add_SelectedIndexChanged({
-    if ($outputDropdown.SelectedIndex -eq 0) {
-        $transLabel.Enabled = $false
-        $transDropdown.Enabled = $false
-    } else {
-        $transLabel.Enabled = $true
-        $transDropdown.Enabled = $true
-    }
+    $enable = ($outputDropdown.SelectedIndex -eq 1)
+    $transLabel.Enabled = $enable
+    $transDropdown.Enabled = $enable
 })
 
-# OK Button
 $okBtn = New-Object System.Windows.Forms.Button
 $okBtn.Text = "OK"
 $okBtn.Location = New-Object System.Drawing.Point(180,200)
@@ -213,7 +241,6 @@ $okBtn.Size = New-Object System.Drawing.Size(90,35)
 $okBtn.DialogResult = [System.Windows.Forms.DialogResult]::OK
 $form.Controls.Add($okBtn)
 
-# Cancel Button
 $cancelBtn = New-Object System.Windows.Forms.Button
 $cancelBtn.Text = "Cancel"
 $cancelBtn.Location = New-Object System.Drawing.Point(280,200)
@@ -228,28 +255,13 @@ $result = $form.ShowDialog()
 
 if ($result -eq "OK") {
     $lang = switch ($langDropdown.SelectedIndex) {
-        0 { "vi" }
-        1 { "en" }
-        2 { "zh" }
-        default { "auto" }
+        0 { "vi" } 1 { "en" } 2 { "zh" } default { "auto" }
     }
-    
     $model = $modelDropdown.SelectedItem
-    
     $output = if ($outputDropdown.SelectedIndex -eq 0) { "1" } else { "2" }
-    
     $trans = switch ($transDropdown.SelectedIndex) {
-        0 { "en" }
-        1 { "vi" }
-        2 { "es" }
-        3 { "fr" }
-        4 { "de" }
-        5 { "zh" }
-        6 { "ja" }
-        7 { "ko" }
-        default { "en" }
+        0 { "en" } 1 { "vi" } 2 { "zh" } 3 { "es" } 4 { "fr" } 5 { "de" } 6 { "ja" } 7 { "ko" } default { "en" }
     }
-    
     Set-Content -Path "]] .. tmpOut .. [[" -Value "$lang|$model|$output|$trans"
 } else {
     Set-Content -Path "]] .. tmpOut .. [[" -Value "CANCEL"
@@ -269,89 +281,71 @@ if ($result -eq "OK") {
         end
         os.remove(tmpPs1)
 
-        if result == "CANCEL" then
-            return nil, nil, nil, nil
-        end
+        if result == "CANCEL" then return nil end
 
         local parts = {}
-        for part in result:gmatch("[^|]+") do
-            table.insert(parts, part)
-        end
-
+        for part in result:gmatch("[^|]+") do table.insert(parts, part) end
         local lang = parts[1] == "auto" and nil or parts[1]
-        local model = parts[2]
-        local output = parts[3]
-        local trans = parts[4]
-
-        print("DEBUG: lang=" .. tostring(lang) .. ", model=" .. model .. ", output=" .. output .. ", trans=" .. trans)
-        return lang, model, output, trans
+        print("DEBUG: lang=" .. tostring(lang) .. ", model=" .. tostring(parts[2]) .. ", output=" .. tostring(parts[3]) .. ", trans=" .. tostring(parts[4]))
+        return lang, parts[2], parts[3], parts[4]
     else
-        -- Default values for macOS if UI is bypassed
         return nil, "medium", "1", "en"
     end
 end
 
 -- ============================================================
--- Call Python to transcribe
+-- Call Python để transcribe
 -- ============================================================
 local function runTranscribe(inputPath, outputSrtPath, language, model, outputFiles, targetLang)
     local envPrefix = isWindows and "set PYTHONIOENCODING=utf-8 && " or "PYTHONIOENCODING=utf-8 "
     local cmd = string.format(
         '%s%s "%s" "%s" "%s" "%s" "%s" "%s" "%s"',
-        envPrefix, PYTHON_EXE, PYTHON_SCRIPT_PATH, inputPath, outputSrtPath, language or "", model or "medium", targetLang or "", outputFiles or "1"
+        envPrefix, PYTHON_EXE, PYTHON_SCRIPT_PATH,
+        inputPath, outputSrtPath,
+        language or "", model or "medium", targetLang or "", outputFiles or "1"
     )
-    
     print("Running: " .. cmd)
-    print("Processing with local Whisper (CPU) - may take a few minutes depending on file length and model. Please wait...")
+    print("Processing with local Whisper (CPU) - may take a few minutes. Please wait...")
 
     local handle = io.popen(cmd .. " 2>&1")
     local output = handle:read("*a")
-    local ok, exitType, exitCode = handle:close()
+    handle:close()
     print("---- Python output ----")
     print(output)
     print("------------------------")
 
-    local success = output:find("OK:") ~= nil
-    return success, output
+    return output:find("OK:") ~= nil, output
 end
 
 -- ============================================================
--- Import SRT files into current timeline
+-- Import SRT vào Media Pool + Timeline
+-- Trả về: ok (bool), msg (string), importedPaths (table)
 -- ============================================================
-local function importSrtToTimeline(srtPath, translatedSrtPath)
+local function importToMediaPool(paths)
     local projectManager = resolve:GetProjectManager()
-    local project = projectManager:GetCurrentProject()
-    if not project then
-        return false, "Cannot find open project."
-    end
-
-    local timeline = project:GetCurrentTimeline()
-    if not timeline then
-        return false, "Cannot find open timeline. Please open a timeline first."
-    end
+    local project = projectManager and projectManager:GetCurrentProject()
+    if not project then return false, "Không tìm thấy project đang mở.", {} end
 
     local mediaPool = project:GetMediaPool()
+    if not mediaPool then return false, "Không truy cập được Media Pool.", {} end
 
-    -- Import original SRT file
-    local importedItems = mediaPool:ImportMedia({ srtPath })
-    if not importedItems or #importedItems == 0 then
-        return false, "Failed to import SRT file to Media Pool."
+    local toImport = {}
+    for _, p in ipairs(paths) do
+        if p then table.insert(toImport, p) end
     end
 
-    local appended = mediaPool:AppendToTimeline(importedItems)
-    if not appended or #appended == 0 then
-        return false, "Imported to Media Pool but failed to add to timeline. You can manually drag the SRT file from Media Pool to timeline."
+    local imported = mediaPool:ImportMedia(toImport)
+    if not imported or #imported == 0 then
+        return false, "ImportMedia() thất bại.", {}
     end
 
-    -- Import translated SRT file if it exists
-    if translatedSrtPath and os.rename(translatedSrtPath, translatedSrtPath) then
-        local translatedItems = mediaPool:ImportMedia({ translatedSrtPath })
-        if translatedItems and #translatedItems > 0 then
-            mediaPool:AppendToTimeline(translatedItems)
-        end
+    -- Thử thêm vào timeline (không bắt buộc phải thành công)
+    local timeline = project:GetCurrentTimeline()
+    if timeline then
+        mediaPool:AppendToTimeline(imported)
     end
 
-    return true, "Successfully added subtitle(s) to timeline."
+    return true, "Đã import vào Media Pool (" .. #imported .. " file).", imported
 end
 
 -- ============================================================
@@ -360,6 +354,7 @@ end
 local function Main()
     print("=== AutoCaption VEC - Generate Captions ===")
 
+    -- 1. Chọn file đầu vào
     local inputFile = pickFile()
     if not inputFile then
         print("Cancelled by user.")
@@ -367,40 +362,113 @@ local function Main()
     end
     print("Selected file: " .. inputFile)
 
-    -- single form captures all parameters now
-    local selectedLang, model, outputFormat, targetLang = pickLanguage()
+    -- 2. Chọn cài đặt
+    local selectedLang, model, outputFormat, targetLang = pickSettings()
     if not model then
         print("Cancelled by user.")
         return
     end
 
-    local srtOutput = (os.getenv("TEMP") or "/tmp") .. "/autocaption_vec_output.srt"
-    if not isWindows then
-        srtOutput = "/tmp/autocaption_vec_output.srt"
+    -- 3. Xác định đường dẫn file SRT tạm (trong TEMP, sau đó sẽ import)
+    local tempDir = (isWindows and os.getenv("TEMP")) or "/tmp"
+    local srtMain = tempDir .. (isWindows and "\\" or "/") .. "autocaption_vec_output.srt"
+    local srtTrans = nil
+    if outputFormat == "2" and targetLang and targetLang ~= "" then
+        srtTrans = tempDir .. (isWindows and "\\" or "/") .. "autocaption_vec_output_" .. targetLang .. ".srt"
     end
 
-    local success, log = runTranscribe(inputFile, srtOutput, selectedLang, model, outputFormat, targetLang)
+    -- 4. Chạy Python transcribe
+    local success, log = runTranscribe(inputFile, srtMain, selectedLang, model, outputFormat, targetLang)
     if not success then
-        showMessage("AutoCaption VEC", "Failed to create subtitles.\n\nDetails logged in Console.", false)
+        showMessage("AutoCaption VEC", "Tạo phụ đề thất bại.\n\nXem chi tiết lỗi trong Console.", false)
         return
     end
 
-    -- Determine translated file path
-    local translatedSrtOutput = nil
-    if outputFormat == "2" and targetLang then
-        local baseDir = string.match(srtOutput, "^(.*)[/\\]")
-        translatedSrtOutput = baseDir .. "/autocaption_vec_output_" .. targetLang .. ".srt"
+    -- 5. Danh sách file SRT đã tạo thành công
+    local srtFiles = {}
+    local function fileExists(p)
+        if not p then return false end
+        local f = io.open(p, "r")
+        if f then f:close(); return true end
+        return false
+    end
+    if fileExists(srtMain) then table.insert(srtFiles, srtMain) end
+    if fileExists(srtTrans) then table.insert(srtFiles, srtTrans) end
+
+    if #srtFiles == 0 then
+        showMessage("AutoCaption VEC", "Không tìm thấy file SRT sau khi xử lý. Xem Console để biết chi tiết.", false)
+        return
     end
 
-    local importOk, importMsg = importSrtToTimeline(srtOutput, translatedSrtOutput)
+    -- 6. Import vào Media Pool (mặc định)
+    local importOk, importMsg = importToMediaPool(srtFiles)
     if importOk then
-        local msgText = outputFormat == "2" and "Successfully created and added subtitle files to timeline!" or "Successfully created and added subtitle to timeline!"
-        showMessage("AutoCaption VEC", msgText, false)
+        local infoMsg = "Đã import " .. #srtFiles .. " file SRT vào Media Pool thành công!"
+        if outputFormat == "2" then
+            infoMsg = infoMsg .. "\n\nFile gốc: " .. srtMain
+            if srtTrans then infoMsg = infoMsg .. "\nFile dịch: " .. srtTrans end
+        end
+        showMessage("AutoCaption VEC", infoMsg, false)
+        return
+    end
+
+    -- 7. Import tự động thất bại → hỏi người dùng có muốn tự chọn vị trí lưu không
+    print("Import vào Media Pool thất bại: " .. importMsg)
+    local wantManual = showMessage(
+        "AutoCaption VEC",
+        "Không thể tự động import vào Media Pool.\n\n" ..
+        "Bạn có muốn chọn thư mục để lưu file SRT thủ công không?\n" ..
+        "(Sau đó bạn có thể tự kéo file vào Media Pool / Timeline)",
+        true
+    )
+
+    if not wantManual then
+        showMessage("AutoCaption VEC",
+            "Đã tạo file SRT tại:\n" ..
+            table.concat(srtFiles, "\n") ..
+            "\n\nHãy kéo thủ công vào Media Pool.", false)
+        return
+    end
+
+    -- 8. Người dùng chọn thư mục lưu
+    local saveFolder = pickSaveFolder(os.getenv("USERPROFILE") or os.getenv("HOME"))
+    if not saveFolder then
+        showMessage("AutoCaption VEC",
+            "Không chọn thư mục. File SRT tạm vẫn nằm tại:\n" .. table.concat(srtFiles, "\n"), false)
+        return
+    end
+
+    -- 9. Copy file SRT sang thư mục đã chọn
+    local sep = isWindows and "\\" or "/"
+    local finalPaths = {}
+    for _, srcPath in ipairs(srtFiles) do
+        local filename = srcPath:match("[/\\]([^/\\]+)$")
+        local destPath = saveFolder .. sep .. filename
+        local copyCmd = isWindows
+            and ('copy /Y "' .. srcPath .. '" "' .. destPath .. '" >nul')
+            or  ('cp "' .. srcPath .. '" "' .. destPath .. '"')
+        os.execute(copyCmd)
+        if fileExists(destPath) then
+            table.insert(finalPaths, destPath)
+        end
+    end
+
+    if #finalPaths == 0 then
+        showMessage("AutoCaption VEC", "Copy file thất bại. File SRT tạm vẫn tại:\n" .. table.concat(srtFiles, "\n"), false)
+        return
+    end
+
+    -- 10. Thử import lại từ vị trí đã chọn
+    local importOk2 = importToMediaPool(finalPaths)
+    if importOk2 then
+        showMessage("AutoCaption VEC",
+            "Đã lưu và import " .. #finalPaths .. " file SRT vào Media Pool thành công!\n\n" ..
+            table.concat(finalPaths, "\n"), false)
     else
         showMessage("AutoCaption VEC",
-            "Created subtitle file(s) at:\n" .. srtOutput ..
-            (translatedSrtOutput and "\n" .. translatedSrtOutput or "") ..
-            "\n\nBut failed to add to timeline: " .. importMsg, false)
+            "Đã lưu file SRT tại:\n" ..
+            table.concat(finalPaths, "\n") ..
+            "\n\nHãy kéo thủ công từ vị trí này vào Media Pool.", false)
     end
 end
 
