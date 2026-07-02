@@ -1,816 +1,539 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-AutoCaption VEC - Standalone App
-Chạy độc lập, không cần DaVinci Resolve.
-Giao diện: tkinter (có sẵn trong Python, không cần cài thêm).
-"""
-
 import sys
 import os
 import threading
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+from PySide6 import QtWidgets, QtCore, QtGui
+from faster_whisper import WhisperModel
+import argostranslate.package
+import argostranslate.translate
 
-# ─── UTF-8 stdout ────────────────────────────────────────────
-try:
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
-except Exception:
-    pass
-
-# ─── i18n ────────────────────────────────────────────────────
 STRINGS = {
-    "en": {
-        "title":           "AutoCaption VEC",
-        "tab_main":        "Generate",
-        "tab_log":         "Log",
-        "input_file":      "Input File",
-        "browse":          "Browse...",
-        "output_folder":   "Output Folder",
-        "src_lang":        "Source Language",
-        "model":           "Whisper Model",
-        "output_files":    "Output Files",
-        "trans_lang":      "Translation Language",
-        "one_file":        "1 File (Original)",
-        "two_files":       "2 Files (Original + Translation)",
-        "start":           "▶  Generate Subtitles",
-        "cancel":          "■  Cancel",
-        "auto":            "Auto-detect",
-        "status_ready":    "Ready.",
-        "status_running":  "Processing… please wait.",
-        "status_done":     "Done!",
-        "status_cancel":   "Cancelled.",
-        "err_no_input":    "Please select an input file.",
-        "err_no_output":   "Please select an output folder.",
-        "err_no_whisper":  "faster-whisper is not installed.\nRun: pip install faster-whisper",
-        "err_no_argos":    "argostranslate is not installed.\nRun: pip install argostranslate",
-        "err_no_speech":   "No speech detected in file.",
-        "err_file_not_found": "Input file not found.",
-        "done_msg":        "Subtitle file(s) saved to:\n{paths}",
-        "lang_vi":         "Vietnamese",
-        "lang_en":         "English",
-        "lang_zh":         "Chinese",
-        "open_folder":     "Open Output Folder",
-    },
     "vi": {
-        "title":           "AutoCaption VEC",
-        "tab_main":        "Tạo phụ đề",
-        "tab_log":         "Log",
-        "input_file":      "File đầu vào",
-        "browse":          "Chọn file...",
-        "output_folder":   "Thư mục lưu",
-        "src_lang":        "Ngôn ngữ gốc",
-        "model":           "Model Whisper",
-        "output_files":    "File xuất",
-        "trans_lang":      "Ngôn ngữ dịch",
-        "one_file":        "1 File (Gốc)",
-        "two_files":       "2 File (Gốc + Dịch)",
-        "start":           "▶  Tạo phụ đề",
-        "cancel":          "■  Hủy",
-        "auto":            "Tự nhận diện",
-        "status_ready":    "Sẵn sàng.",
-        "status_running":  "Đang xử lý… vui lòng chờ.",
-        "status_done":     "Hoàn thành!",
-        "status_cancel":   "Đã hủy.",
-        "err_no_input":    "Vui lòng chọn file đầu vào.",
-        "err_no_output":   "Vui lòng chọn thư mục lưu.",
-        "err_no_whisper":  "Chưa cài faster-whisper.\nChạy: pip install faster-whisper",
-        "err_no_argos":    "Chưa cài argostranslate.\nChạy: pip install argostranslate",
-        "err_no_speech":   "Không phát hiện giọng nói trong file.",
-        "err_file_not_found": "Không tìm thấy file đầu vào.",
-        "done_msg":        "Đã lưu file phụ đề tại:\n{paths}",
-        "lang_vi":         "Tiếng Việt",
-        "lang_en":         "Tiếng Anh",
-        "lang_zh":         "Tiếng Trung",
-        "open_folder":     "Mở thư mục",
+        "title": "AutoCaption VEC",
+        "input_file": "File đầu vào",
+        "output_folder": "Thư mục lưu",
+        "src_lang": "Ngôn ngữ nguồn",
+        "model": "Model",
+        "output_files": "File output",
+        "trans_lang": "Ngôn ngữ dịch",
+        "browse": "Chọn file...",
+        "start": "Tạo phụ đề",
+        "cancel": "Hủy",
+        "open_folder": "Mở thư mục",
+        "auto": "Tự động phát hiện",
+        "lang_vi": "Tiếng Việt",
+        "lang_en": "English",
+        "lang_zh": "中文",
+        "one_file": "1 file phụ đề",
+        "two_files": "2 file phụ đề (gốc + dịch)",
+    },
+    "en": {
+        "title": "AutoCaption VEC",
+        "input_file": "Input file",
+        "output_folder": "Output folder",
+        "src_lang": "Source language",
+        "model": "Model",
+        "output_files": "Output files",
+        "trans_lang": "Translation language",
+        "browse": "Browse...",
+        "start": "Generate subtitles",
+        "cancel": "Cancel",
+        "open_folder": "Open folder",
+        "auto": "Auto detect",
+        "lang_vi": "Tiếng Việt",
+        "lang_en": "English",
+        "lang_zh": "中文",
+        "one_file": "1 subtitle file",
+        "two_files": "2 subtitle files (original + translated)",
     },
     "zh": {
-        "title":           "AutoCaption VEC",
-        "tab_main":        "生成字幕",
-        "tab_log":         "日志",
-        "input_file":      "输入文件",
-        "browse":          "浏览...",
-        "output_folder":   "输出文件夹",
-        "src_lang":        "源语言",
-        "model":           "Whisper 模型",
-        "output_files":    "输出文件",
-        "trans_lang":      "翻译语言",
-        "one_file":        "1 个文件（原文）",
-        "two_files":       "2 个文件（原文 + 翻译）",
-        "start":           "▶  生成字幕",
-        "cancel":          "■  取消",
-        "auto":            "自动检测",
-        "status_ready":    "就绪。",
-        "status_running":  "正在处理，请稍候…",
-        "status_done":     "完成！",
-        "status_cancel":   "已取消。",
-        "err_no_input":    "请选择输入文件。",
-        "err_no_output":   "请选择输出文件夹。",
-        "err_no_whisper":  "未安装 faster-whisper。\n运行: pip install faster-whisper",
-        "err_no_argos":    "未安装 argostranslate。\n运行: pip install argostranslate",
-        "err_no_speech":   "文件中未检测到语音。",
-        "err_file_not_found": "未找到输入文件。",
-        "done_msg":        "字幕文件已保存至:\n{paths}",
-        "lang_vi":         "越南语",
-        "lang_en":         "英语",
-        "lang_zh":         "中文",
-        "open_folder":     "打开文件夹",
-    },
+        "title": "AutoCaption VEC",
+        "input_file": "输入文件",
+        "output_folder": "输出文件夹",
+        "src_lang": "源语言",
+        "model": "模型",
+        "output_files": "输出文件",
+        "trans_lang": "翻译语言",
+        "browse": "选择...",
+        "start": "生成字幕",
+        "cancel": "取消",
+        "open_folder": "打开文件夹",
+        "auto": "自动检测",
+        "lang_vi": "Tiếng Việt",
+        "lang_en": "English",
+        "lang_zh": "中文",
+        "one_file": "1个字幕文件",
+        "two_files": "2个字幕文件(原文+翻译)",
+    }
 }
 
-LANG_CODES = {"vi": "vi", "en": "en", "zh": "zh"}
 MODEL_SIZES = ["tiny", "base", "small", "medium", "large-v3"]
-LANG_CODE_MAP = {"zh": "zh"}
 
-
-def normalize_lang(code):
-    return LANG_CODE_MAP.get(code, code) if code else code
-
-
-def format_timestamp(seconds: float) -> str:
-    if seconds < 0:
-        seconds = 0
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    ms = int(round((seconds - int(seconds)) * 1000))
-    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
-
-
-# ─── CORE LOGIC ──────────────────────────────────────────────
 
 def transcribe(input_path, language, model_size, log_fn, cancel_event):
-    """Chạy faster-whisper, trả về list segment dict và ngôn ngữ đã phát hiện."""
-    from faster_whisper import WhisperModel
-    log_fn(f"Loading model '{model_size}'…")
-    model = WhisperModel(model_size, device="cpu", compute_type="int8")
-    log_fn(f"Processing: {input_path}")
-    segments_iter, info = model.transcribe(
-        input_path,
-        language=language,
-        beam_size=5,
-        vad_filter=True,
-    )
-    detected_lang = normalize_lang(language) if language else normalize_lang(info.language)
-    if not language:
-        log_fn(f"Detected language: {info.language} ({info.language_probability:.2f})")
-    results = []
-    for seg in segments_iter:
-        if cancel_event.is_set():
-            return None, detected_lang
-        text = seg.text.strip()
-        if not text:
-            continue
-        start = format_timestamp(seg.start)
-        end = format_timestamp(seg.end)
-        results.append({"start": start, "end": end, "text": text})
-        log_fn(f"[{start} --> {end}] {text}")
-    return results, detected_lang
+    try:
+        model = WhisperModel(model_size, device="cpu", compute_type="int8")
+        segments, info = model.transcribe(input_path, language=language if language != "auto" else None)
+        segments_list = list(segments)
+        detected = info.language
+        log_fn(f"Detected language: {detected}, segments: {len(segments_list)}")
+        return segments_list, detected
+    except Exception as e:
+        log_fn(f"ERROR transcribe: {e}")
+        return None, None
 
 
-def build_srt(segments):
-    lines = []
-    for i, seg in enumerate(segments, 1):
-        lines += [str(i), f"{seg['start']} --> {seg['end']}", seg["text"], ""]
-    return "\n".join(lines)
-
-
-def ensure_argos_package(src, tgt, log_fn, try_pivot=True):
-    import argostranslate.package
-    import argostranslate.translate
-
-    def package_installed(from_code, to_code):
-        installed = argostranslate.translate.get_installed_languages()
-        from_lang = next((l for l in installed if l.code == from_code), None)
-        to_lang = next((l for l in installed if l.code == to_code), None)
-        return from_lang and to_lang and from_lang.get_translation(to_lang)
-
-    def find_package(from_code, to_code):
-        return next(
-            (p for p in argostranslate.package.get_available_packages()
-             if p.from_code == from_code and p.to_code == to_code),
-            None
-        )
-
-    if package_installed(src, tgt):
-        return True
-
-    log_fn(f"Downloading translation package {src} → {tgt}…")
-    argostranslate.package.update_package_index()
-    pkg = find_package(src, tgt)
-    if pkg:
-        argostranslate.package.install_from_path(pkg.download())
-        log_fn(f"Package {src} → {tgt} installed.")
-        return True
-
-    if try_pivot and src != "en" and tgt != "en":
-        log_fn(f"No direct package for {src} → {tgt}. Attempting pivot via English.")
-        first = ensure_argos_package(src, "en", log_fn, try_pivot=False)
-        second = ensure_argos_package("en", tgt, log_fn, try_pivot=False)
-        return first and second
-
-    log_fn(f"ERROR: No package found for {src} → {tgt}")
-    return False
+def ensure_argos_package(src, tgt, log_fn):
+    try:
+        log_fn(f"Installing translation package {src} -> {tgt}...")
+        argostranslate.package.update_package_index()
+        available_packages = argostranslate.package.get_available_packages()
+        pkg = None
+        for p in available_packages:
+            if p.from_code == src and p.to_code == tgt:
+                pkg = p
+                break
+        if pkg:
+            argostranslate.package.install_package(pkg)
+            log_fn(f"Installed {src} -> {tgt}")
+            return True
+        log_fn(f"Package {src} -> {tgt} not found")
+        return False
+    except Exception as e:
+        log_fn(f"ERROR install package: {e}")
+        return False
 
 
 def translate_segments(segments, src_lang, tgt_lang, log_fn, cancel_event, progress_fn=None):
-    import argostranslate.translate
-    translated = []
-    total = len(segments) if segments else 0
-    for idx, seg in enumerate(segments, start=1):
-        if cancel_event.is_set():
+    try:
+        if not ensure_argos_package(src_lang, tgt_lang, log_fn):
             return None
-        try:
-            text = argostranslate.translate.translate(seg["text"], src_lang, tgt_lang)
-        except Exception as e:
-            log_fn(f"WARNING: translation failed for segment: {e}")
-            text = seg["text"]
-        translated.append({**seg, "text": text})
-        log_fn(f"[{seg['start']} --> {seg['end']}] {text}")
-        if progress_fn and total:
-            # report progress between 60% and 90% during translation
-            percent = 60 + int((idx / total) * 30)
-            try:
-                progress_fn(percent)
-            except Exception:
-                pass
-    if progress_fn:
-        try:
-            progress_fn(90)
-        except Exception:
-            pass
-    return translated
+        
+        translated = []
+        total = len(segments)
+        for i, seg in enumerate(segments):
+            if cancel_event.is_set():
+                return None
+            trans_text = argostranslate.translate.translate(seg.text, src_lang, tgt_lang)
+            translated.append(type('Segment', (), {'start': seg.start, 'end': seg.end, 'text': trans_text})())
+            if progress_fn and (i + 1) % 5 == 0:
+                progress_fn(int(100 * (i + 1) / total))
+        return translated
+    except Exception as e:
+        log_fn(f"ERROR translate: {e}")
+        return None
+
+
+def build_srt(segments):
+    srt = ""
+    for i, seg in enumerate(segments, 1):
+        start_ms = int(seg.start * 1000)
+        end_ms = int(seg.end * 1000)
+        start_str = f"{start_ms // 3600000:02d}:{(start_ms % 3600000) // 60000:02d}:{(start_ms % 60000) // 1000:02d},{start_ms % 1000:03d}"
+        end_str = f"{end_ms // 3600000:02d}:{(end_ms % 3600000) // 60000:02d}:{(end_ms % 60000) // 1000:02d},{end_ms % 1000:03d}"
+        srt += f"{i}\n{start_str} --> {end_str}\n{seg.text}\n\n"
+    return srt
 
 
 def save_srt(path, srt_text, log_fn):
     try:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(srt_text)
         log_fn(f"Saved: {path}")
         return True
     except Exception as e:
-        log_fn(f"ERROR saving {path}: {e}")
+        log_fn(f"ERROR save: {e}")
         return False
 
 
-# ─── GUI ─────────────────────────────────────────────────────
+class Worker(QtCore.QObject):
+    log_signal = QtCore.Signal(str)
+    progress_signal = QtCore.Signal(int)
+    finished_signal = QtCore.Signal(bool, object)
+    error_signal = QtCore.Signal(str)
 
-class App(tk.Tk):
+    def __init__(self, input_file, output_folder, src_lang, model_size, output_files, trans_lang):
+        super().__init__()
+        self.input_file = input_file
+        self.output_folder = output_folder
+        self.src_lang = src_lang
+        self.model_size = model_size
+        self.output_files = output_files
+        self.trans_lang = trans_lang
+        self.cancel_event = threading.Event()
+
+    def run(self):
+        try:
+            saved_paths = []
+            
+            self.log_signal.emit(f"Transcribing: {self.input_file}")
+            segments, detected = transcribe(self.input_file, self.src_lang, self.model_size, self.log_signal.emit, self.cancel_event)
+            
+            if segments is None:
+                self.finished_signal.emit(False, None)
+                return
+
+            self.progress_signal.emit(30)
+            base_name = os.path.splitext(os.path.basename(self.input_file))[0]
+            
+            srt_path = os.path.join(self.output_folder, f"{base_name}_{detected}.srt")
+            if save_srt(srt_path, build_srt(segments), self.log_signal.emit):
+                saved_paths.append(srt_path)
+                self.progress_signal.emit(50)
+
+            if self.output_files == 1 and self.trans_lang != detected:
+                self.log_signal.emit(f"Translating to {self.trans_lang}...")
+                trans_segments = translate_segments(segments, detected, self.trans_lang, self.log_signal.emit, self.cancel_event, self.progress_signal.emit)
+                
+                if trans_segments:
+                    srt_trans = os.path.join(self.output_folder, f"{base_name}_{self.trans_lang}.srt")
+                    if save_srt(srt_trans, build_srt(trans_segments), self.log_signal.emit):
+                        saved_paths.append(srt_trans)
+                        self.progress_signal.emit(100)
+
+            self.finished_signal.emit(True, saved_paths)
+        except Exception as e:
+            self.error_signal.emit(str(e))
+            self.finished_signal.emit(False, None)
+
+
+class App(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self._ui_lang = "vi"  # ngôn ngữ giao diện mặc định
-        self._cancel_event = threading.Event()
+        self._ui_lang = "vi"
         self._running = False
-
-        self._bg_color = "#0b1220"
-        self._panel_color = "#101827"
-        self._card_color = "#111827"
-        self._field_color = "#141c2d"
-        self._button_color = "#2563eb"
-        self._button_hover = "#1d4ed8"
-        self._fg_color = "#e6eef6"
-
+        self._worker_thread = None
+        self._worker = None
+        self._setup_theme()
         self._build_ui()
         self._refresh_lang()
 
-    # ── build ─────────────────────────────────────────────────
+    def _setup_theme(self):
+        QtWidgets.QApplication.setStyle("Fusion")
+        palette = QtGui.QPalette()
+        palette.setColor(QtGui.QPalette.Window, QtGui.QColor("#070b14"))
+        palette.setColor(QtGui.QPalette.WindowText, QtGui.QColor("#e6eef6"))
+        palette.setColor(QtGui.QPalette.Base, QtGui.QColor("#0f172a"))
+        palette.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor("#111827"))
+        palette.setColor(QtGui.QPalette.ToolTipBase, QtGui.QColor("#0f172a"))
+        palette.setColor(QtGui.QPalette.ToolTipText, QtGui.QColor("#e6eef6"))
+        palette.setColor(QtGui.QPalette.Text, QtGui.QColor("#e6eef6"))
+        palette.setColor(QtGui.QPalette.Button, QtGui.QColor("#111827"))
+        palette.setColor(QtGui.QPalette.ButtonText, QtGui.QColor("#e6eef6"))
+        palette.setColor(QtGui.QPalette.Highlight, QtGui.QColor("#2563eb"))
+        palette.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor("#ffffff"))
+        QtWidgets.QApplication.setPalette(palette)
+
     def _build_ui(self):
-        self.resizable(False, False)
-        self.configure(bg=self._bg_color, padx=12, pady=12)
-        self.attributes("-alpha", 0.98)
+        self.setWindowTitle("AutoCaption VEC")
+        self.resize(1100, 750)
+        self.setMinimumSize(950, 650)
 
-        style = ttk.Style(self)
-        try:
-            style.theme_use("clam")
-        except Exception:
-            pass
-        style.configure("Dark.TLabel",
-                        background=self._panel_color,
-                        foreground=self._fg_color)
-        style.configure("Dark.TEntry",
-                        fieldbackground=self._field_color,
-                        background=self._field_color,
-                        foreground=self._fg_color,
-                        padding=6)
-        style.map("Dark.TEntry",
-                  fieldbackground=[("focus", self._field_color)],
-                  foreground=[("focus", self._fg_color)],
-                  selectbackground=[("focus", "#334155")],
-                  selectforeground=[("focus", self._fg_color)])
-        style.configure("Dark.TCombobox",
-                        fieldbackground=self._field_color,
-                        background=self._field_color,
-                        foreground=self._fg_color,
-                        arrowcolor=self._fg_color,
-                        padding=6)
-        style.map("Dark.TCombobox",
-                  fieldbackground=[("readonly", self._field_color)],
-                  background=[("readonly", self._field_color)],
-                  foreground=[("readonly", self._fg_color)])
-        style.configure("Rounded.TButton",
-                        background=self._button_color,
-                        foreground=self._fg_color,
-                        borderwidth=0,
-                        relief="flat",
-                        padding=(12, 8))
-        style.map("Rounded.TButton",
-                  background=[("active", self._button_hover), ("pressed", "#1e40af")],
-                  foreground=[("active", self._fg_color)])
-        style.configure("TProgressbar",
-                        background=self._button_color,
-                        troughcolor=self._field_color)
-        style.configure("Card.TFrame",
-                        background=self._card_color)
-        style.configure("Section.TLabel",
-                        background=self._panel_color,
-                        foreground=self._fg_color,
-                        font=(None, 11, "bold"))
-        style.configure("SectionNum.TLabel",
-                        background="#2563eb",
-                        foreground="white",
-                        font=(None, 9, "bold"),
-                        padding=(6, 4))
+        central = QtWidgets.QWidget(self)
+        self.setCentralWidget(central)
 
-        top = tk.Frame(self, bg=self._panel_color)
-        top.pack(fill="x", pady=(0, 10))
-        title = tk.Label(top, text="AutoSubs", bg=self._panel_color,
-                         fg=self._fg_color, font=(None, 14, "bold"))
-        title.pack(side="left")
-        self._ui_lang_var = tk.StringVar(value="vi")
-        for code, label in [("vi", "Việt"), ("en", "EN"), ("zh", "中文")]:
-            tk.Radiobutton(
-                top, text=label, variable=self._ui_lang_var,
-                value=code, command=self._on_ui_lang_change,
-                bg=self._panel_color, fg=self._fg_color,
-                selectcolor=self._panel_color,
-                activebackground=self._panel_color,
-                activeforeground=self._fg_color,
-                borderwidth=0,
-                highlightthickness=0,
-            ).pack(side="left", padx=6)
+        main_layout = QtWidgets.QVBoxLayout(central)
+        main_layout.setContentsMargins(16, 16, 16, 16)
+        main_layout.setSpacing(16)
 
-        content = tk.Frame(self, bg=self._bg_color)
-        content.pack(fill="both", expand=True)
+        # Top bar
+        top = QtWidgets.QFrame(self)
+        top.setStyleSheet("background-color: #0f172a; border: 1px solid #1f2937; border-radius: 16px;")
+        top_layout = QtWidgets.QHBoxLayout(top)
+        top_layout.setContentsMargins(16, 12, 16, 12)
+        
+        title = QtWidgets.QLabel("AutoCaption VEC")
+        title.setStyleSheet("font-size: 18px; font-weight: 700; color: #f8fafc;")
+        top_layout.addWidget(title)
+        top_layout.addStretch()
+        
+        self._lang_combo = QtWidgets.QComboBox()
+        self._lang_combo.addItems(["Việt", "EN", "中文"])
+        self._lang_combo.setCurrentIndex(0)
+        self._lang_combo.currentIndexChanged.connect(self._on_ui_lang_change)
+        top_layout.addWidget(self._lang_combo)
+        main_layout.addWidget(top)
 
-        self._left_panel = tk.Frame(content, bg=self._panel_color)
-        self._left_panel.pack(side="left", fill="both", expand=True, padx=(0, 8))
-        self._right_panel = tk.Frame(content, bg=self._panel_color, width=320)
-        self._right_panel.pack(side="left", fill="both", expand=False)
+        # Content: Left (form) + Right (log)
+        content = QtWidgets.QHBoxLayout()
+        content.setSpacing(16)
 
-        self._build_main_tab()
-        self._build_log_tab()
+        # Left panel: Form
+        left_card = QtWidgets.QFrame(self)
+        left_card.setStyleSheet("background-color: #0f172a; border: 1px solid #1f2937; border-radius: 18px;")
+        left_layout = QtWidgets.QVBoxLayout(left_card)
+        left_layout.setContentsMargins(16, 16, 16, 16)
+        left_layout.setSpacing(12)
 
-        self._status_var = tk.StringVar()
-        tk.Label(self, textvariable=self._status_var,
-                 anchor="w", relief="flat", bg=self._panel_color, fg=self._fg_color,
-                 padx=8, bd=0, highlightthickness=1, highlightbackground="#334155"
-                 ).pack(fill="x", pady=(10, 0))
+        self._build_form(left_layout)
+        
+        content.addWidget(left_card, 1)
 
-    def _build_main_tab(self):
-        f = self._left_panel
-        f.configure(bg=self._panel_color)
-        COL_W = 38
+        # Right panel: Log
+        right_card = QtWidgets.QFrame(self)
+        right_card.setStyleSheet("background-color: #0f172a; border: 1px solid #1f2937; border-radius: 18px;")
+        right_layout = QtWidgets.QVBoxLayout(right_card)
+        right_layout.setContentsMargins(16, 16, 16, 16)
+        right_layout.setSpacing(8)
 
-        entry_style = {
-            "fieldbackground": self._field_color,
-            "background": self._field_color,
-            "foreground": self._fg_color,
-            "insertbackground": self._fg_color,
-            "padding": 8,
-        }
-        button_style = {
-            "style": "Rounded.TButton",
-        }
+        self._build_log(right_layout)
+        
+        content.addWidget(right_card, 0)
 
-        # Input file
-        self._lbl_input = tk.Label(f, anchor="w", bg=self._panel_color, fg=self._fg_color)
-        self._lbl_input.grid(row=0, column=0, sticky="w", pady=4)
-        self._input_var = tk.StringVar()
-        ttk.Entry(f, textvariable=self._input_var, width=COL_W, style="Dark.TEntry").grid(row=0, column=1, padx=6)
-        self._btn_browse_input = ttk.Button(f, command=self._browse_input, text="Choose file", **button_style)
-        self._btn_browse_input.grid(row=0, column=2)
+        main_layout.addLayout(content, 1)
 
-        # Output folder
-        self._lbl_output = tk.Label(f, anchor="w", bg=self._panel_color, fg=self._fg_color)
-        self._lbl_output.grid(row=1, column=0, sticky="w", pady=4)
-        self._output_var = tk.StringVar()
-        ttk.Entry(f, textvariable=self._output_var, width=COL_W, style="Dark.TEntry").grid(row=1, column=1, padx=6)
-        self._btn_browse_output = ttk.Button(f, command=self._browse_output, text="Choose folder", **button_style)
-        self._btn_browse_output.grid(row=1, column=2)
+        # Status bar
+        status = QtWidgets.QFrame(self)
+        status.setStyleSheet("background-color: #0f172a; border: 1px solid #1f2937; border-radius: 14px;")
+        status_layout = QtWidgets.QHBoxLayout(status)
+        status_layout.setContentsMargins(12, 8, 12, 8)
+        self._status_label = QtWidgets.QLabel("Ready")
+        self._status_label.setStyleSheet("color: #cbd5e1;")
+        status_layout.addWidget(self._status_label)
+        main_layout.addWidget(status)
 
-        category = tk.Frame(f, bg=self._card_color, bd=0, padx=16, pady=16)
-        category.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(12, 0))
-        category.grid_columnconfigure(0, weight=1)
-        self._lbl_src_lang = tk.Label(category, text="Source language", bg=self._card_color, fg=self._fg_color)
-        self._lbl_src_lang.grid(row=0, column=0, sticky="w")
-        self._src_lang_var = tk.StringVar()
-        self._cmb_src_lang = ttk.Combobox(category, textvariable=self._src_lang_var,
-                                           state="readonly", width=COL_W - 2,
-                                           style="Dark.TCombobox")
-        self._cmb_src_lang.grid(row=1, column=0, pady=(6, 0), sticky="ew")
+    def _build_form(self, parent_layout):
+        # Input file row
+        input_row = QtWidgets.QHBoxLayout()
+        self._lbl_input = QtWidgets.QLabel()
+        self._input_edit = QtWidgets.QLineEdit()
+        self._btn_browse_input = QtWidgets.QPushButton()
+        input_row.addWidget(self._lbl_input, 0)
+        input_row.addWidget(self._input_edit, 1)
+        input_row.addWidget(self._btn_browse_input, 0)
+        parent_layout.addLayout(input_row)
 
-        category2 = tk.Frame(f, bg=self._card_color, bd=0, padx=16, pady=16)
-        category2.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 0))
-        category2.grid_columnconfigure(0, weight=1)
-        self._lbl_model = tk.Label(category2, text="Whisper model", bg=self._card_color, fg=self._fg_color)
-        self._lbl_model.grid(row=0, column=0, sticky="w")
-        self._model_var = tk.StringVar(value="medium")
-        self._cmb_model = ttk.Combobox(category2, textvariable=self._model_var,
-                                        values=MODEL_SIZES, state="readonly", width=COL_W - 2,
-                                        style="Dark.TCombobox")
-        self._cmb_model.grid(row=1, column=0, pady=(6, 0), sticky="ew")
-        self._cmb_model.current(3)
+        # Output folder row
+        output_row = QtWidgets.QHBoxLayout()
+        self._lbl_output = QtWidgets.QLabel()
+        self._output_edit = QtWidgets.QLineEdit()
+        self._btn_browse_output = QtWidgets.QPushButton()
+        output_row.addWidget(self._lbl_output, 0)
+        output_row.addWidget(self._output_edit, 1)
+        output_row.addWidget(self._btn_browse_output, 0)
+        parent_layout.addLayout(output_row)
 
-        category3 = tk.Frame(f, bg=self._card_color, bd=0, padx=16, pady=16)
-        category3.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 0))
-        category3.grid_columnconfigure(0, weight=1)
-        self._lbl_out_files = tk.Label(category3, text="Output file", bg=self._card_color, fg=self._fg_color)
-        self._lbl_out_files.grid(row=0, column=0, sticky="w")
-        self._out_files_var = tk.StringVar()
-        self._cmb_out_files = ttk.Combobox(category3, textvariable=self._out_files_var,
-                                            state="readonly", width=COL_W - 2,
-                                            style="Dark.TCombobox")
-        self._cmb_out_files.grid(row=1, column=0, pady=(6, 0), sticky="ew")
-        self._cmb_out_files.bind("<<ComboboxSelected>>", self._on_out_files_change)
+        parent_layout.addSpacing(8)
 
-        category4 = tk.Frame(f, bg=self._card_color, bd=0, padx=16, pady=16)
-        category4.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(12, 0))
-        category4.grid_columnconfigure(0, weight=1)
-        self._lbl_trans = tk.Label(category4, text="Translation language", bg=self._card_color, fg=self._fg_color)
-        self._lbl_trans.grid(row=0, column=0, sticky="w")
-        self._trans_var = tk.StringVar()
-        self._cmb_trans = ttk.Combobox(category4, textvariable=self._trans_var,
-                                        state="disabled", width=COL_W - 2,
-                                        style="Dark.TCombobox")
-        self._cmb_trans.grid(row=1, column=0, pady=(6, 0), sticky="ew")
+        # Source language
+        src_row = QtWidgets.QHBoxLayout()
+        self._lbl_src_lang = QtWidgets.QLabel()
+        self._cmb_src_lang = QtWidgets.QComboBox()
+        src_row.addWidget(self._lbl_src_lang, 0)
+        src_row.addWidget(self._cmb_src_lang, 1)
+        parent_layout.addLayout(src_row)
 
-        # Progress bar with percentage label
-        self._progress = ttk.Progressbar(f, mode="determinate", length=320, maximum=100)
-        self._progress.grid(row=6, column=0, columnspan=3, pady=(14, 4), sticky="ew")
-        self._progress_label = tk.Label(f, text="0%", anchor="e", bg=self._panel_color, fg=self._fg_color)
-        self._progress_label.grid(row=7, column=0, columnspan=3, pady=(4, 0), sticky="e")
+        # Model
+        model_row = QtWidgets.QHBoxLayout()
+        self._lbl_model = QtWidgets.QLabel()
+        self._cmb_model = QtWidgets.QComboBox()
+        self._cmb_model.addItems(MODEL_SIZES)
+        self._cmb_model.setCurrentIndex(3)
+        model_row.addWidget(self._lbl_model, 0)
+        model_row.addWidget(self._cmb_model, 1)
+        parent_layout.addLayout(model_row)
+
+        # Output files
+        out_row = QtWidgets.QHBoxLayout()
+        self._lbl_out_files = QtWidgets.QLabel()
+        self._cmb_out_files = QtWidgets.QComboBox()
+        self._cmb_out_files.currentIndexChanged.connect(self._on_out_files_change)
+        out_row.addWidget(self._lbl_out_files, 0)
+        out_row.addWidget(self._cmb_out_files, 1)
+        parent_layout.addLayout(out_row)
+
+        # Translation language
+        trans_row = QtWidgets.QHBoxLayout()
+        self._lbl_trans = QtWidgets.QLabel()
+        self._cmb_trans = QtWidgets.QComboBox()
+        self._cmb_trans.setEnabled(False)
+        trans_row.addWidget(self._lbl_trans, 0)
+        trans_row.addWidget(self._cmb_trans, 1)
+        parent_layout.addLayout(trans_row)
+
+        parent_layout.addSpacing(12)
+
+        # Progress
+        self._progress = QtWidgets.QProgressBar()
+        self._progress.setRange(0, 100)
+        self._progress.setValue(0)
+        self._progress.setStyleSheet("QProgressBar { border: 1px solid #1f2937; border-radius: 8px; text-align: center; background-color: #111827; } QProgressBar::chunk { background-color: #2563eb; border-radius: 8px; }")
+        parent_layout.addWidget(self._progress)
 
         # Buttons
-        btn_frame = tk.Frame(f, bg=self._panel_color)
-        btn_frame.grid(row=8, column=0, columnspan=3, pady=12, sticky="ew")
-        self._btn_start = ttk.Button(btn_frame, text="Generate",
-                                     command=self._on_start,
-                                     style="Rounded.TButton")
-        self._btn_start.pack(side="left", expand=True, fill="x", padx=(0, 6))
-        self._btn_cancel = ttk.Button(btn_frame, text="Cancel",
-                                      command=self._on_cancel,
-                                      state="disabled",
-                                      style="Rounded.TButton")
-        self._btn_cancel.pack(side="left", expand=True, fill="x", padx=(0, 6))
-        self._btn_open = ttk.Button(btn_frame, text="Open folder",
-                                    command=self._open_output_folder,
-                                    style="Rounded.TButton")
-        self._btn_open.pack(side="left", expand=True, fill="x")
+        btn_layout = QtWidgets.QHBoxLayout()
+        btn_layout.setSpacing(8)
+        self._btn_start = QtWidgets.QPushButton()
+        self._btn_cancel = QtWidgets.QPushButton()
+        self._btn_cancel.setEnabled(False)
+        self._btn_open = QtWidgets.QPushButton()
+        btn_layout.addWidget(self._btn_start)
+        btn_layout.addWidget(self._btn_cancel)
+        btn_layout.addWidget(self._btn_open)
+        parent_layout.addLayout(btn_layout)
 
-    def _build_log_tab(self):
-        f = self._right_panel
-        f.configure(bg=self._panel_color)
-        panel = tk.Frame(f, bg=self._card_color, bd=0, padx=16, pady=16)
-        panel.pack(fill="both", expand=True)
-        tk.Label(panel, text="Subtitles", bg=self._card_color, fg=self._fg_color,
-                 font=(None, 12, "bold")).pack(anchor="w")
-        self._subtitle_text = scrolledtext.ScrolledText(
-            panel, state="disabled",
-            font=("Consolas", 10), bg=self._field_color, fg=self._fg_color,
-            insertbackground=self._fg_color, wrap="word", spacing3=4,
-            bd=0, highlightthickness=0, height=22
-        )
-        self._subtitle_text.pack(fill="both", expand=True, pady=(10, 0))
-        self._subtitle_text.config(state="normal")
-        self._subtitle_text.insert("end", "Your subtitles will appear here when finished transcribing")
-        self._subtitle_text.config(state="disabled")
+        parent_layout.addStretch()
 
-        self._log_text = self._subtitle_text
+        # Apply styles
+        control_style = "QLineEdit, QComboBox { background-color: #111827; color: #e2e8f0; border: 1px solid #1f2937; border-radius: 10px; padding: 8px 10px; } QComboBox::drop-down { border: none; } QComboBox QAbstractItemView { background-color: #111827; color: #e2e8f0; selection-background-color: #2563eb; }"
+        self._input_edit.setStyleSheet(control_style)
+        self._output_edit.setStyleSheet(control_style)
+        self._cmb_src_lang.setStyleSheet(control_style)
+        self._cmb_model.setStyleSheet(control_style)
+        self._cmb_out_files.setStyleSheet(control_style)
+        self._cmb_trans.setStyleSheet(control_style)
 
-    # ── language refresh ──────────────────────────────────────
+        btn_style_accent = "QPushButton { background-color: #2563eb; color: white; border: none; border-radius: 10px; padding: 8px 12px; } QPushButton:hover { background-color: #1d4ed8; } QPushButton:disabled { background-color: #374151; color: #9ca3af; }"
+        btn_style = "QPushButton { background-color: #1f2937; color: white; border: none; border-radius: 10px; padding: 8px 12px; } QPushButton:hover { background-color: #2d3748; } QPushButton:disabled { background-color: #374151; color: #9ca3af; }"
+
+        self._btn_browse_input.setStyleSheet(btn_style)
+        self._btn_browse_output.setStyleSheet(btn_style)
+        self._btn_start.setStyleSheet(btn_style_accent)
+        self._btn_cancel.setStyleSheet(btn_style)
+        self._btn_open.setStyleSheet(btn_style)
+
+        # Connections
+        self._btn_browse_input.clicked.connect(self._browse_input)
+        self._btn_browse_output.clicked.connect(self._browse_output)
+        self._btn_start.clicked.connect(self._on_start)
+        self._btn_cancel.clicked.connect(self._on_cancel)
+        self._btn_open.clicked.connect(self._open_output_folder)
+
+    def _build_log(self, parent_layout):
+        label = QtWidgets.QLabel("Subtitles")
+        label.setStyleSheet("font-weight: 600; color: #f8fafc;")
+        parent_layout.addWidget(label)
+        
+        self._log_text = QtWidgets.QTextEdit()
+        self._log_text.setReadOnly(True)
+        self._log_text.setFont(QtGui.QFont("Consolas", 10))
+        self._log_text.setPlainText("Your subtitles will appear here\nwhen finished transcribing")
+        self._log_text.setStyleSheet("QTextEdit { background-color: #111827; color: #e2e8f0; border: 1px solid #1f2937; border-radius: 14px; padding: 10px; }")
+        parent_layout.addWidget(self._log_text, 1)
+
     def _refresh_lang(self):
         s = STRINGS[self._ui_lang]
-        self.title(s["title"])
-        # notebook tabs removed; using fixed split pane
+        self.setWindowTitle(s["title"])
+        self._lbl_input.setText(s["input_file"])
+        self._btn_browse_input.setText(s["browse"])
+        self._lbl_output.setText(s["output_folder"])
+        self._btn_browse_output.setText(s["browse"])
+        self._lbl_src_lang.setText(s["src_lang"])
+        self._lbl_model.setText(s["model"])
+        self._lbl_out_files.setText(s["output_files"])
+        self._lbl_trans.setText(s["trans_lang"])
+        self._btn_start.setText(s["start"])
+        self._btn_cancel.setText(s["cancel"])
+        self._btn_open.setText(s["open_folder"])
 
-        self._lbl_input.config(text=s["input_file"])
-        self._btn_browse_input.config(text=s["browse"])
-        self._lbl_output.config(text=s["output_folder"])
-        self._btn_browse_output.config(text=s["browse"])
-        self._lbl_src_lang.config(text=s["src_lang"])
-        self._lbl_model.config(text=s["model"])
-        self._lbl_out_files.config(text=s["output_files"])
-        self._lbl_trans.config(text=s["trans_lang"])
-        self._btn_start.config(text=s["start"])
-        self._btn_cancel.config(text=s["cancel"])
-        self._btn_open.config(text=s["open_folder"])
-
-        # Source lang options (thêm auto-detect)
         src_options = [s["auto"], s["lang_vi"], s["lang_en"], s["lang_zh"]]
-        self._cmb_src_lang.config(values=src_options)
-        if not self._src_lang_var.get() or self._src_lang_var.get() not in src_options:
-            self._cmb_src_lang.current(0)
+        self._cmb_src_lang.blockSignals(True)
+        self._cmb_src_lang.clear()
+        self._cmb_src_lang.addItems(src_options)
+        self._cmb_src_lang.blockSignals(False)
 
-        # Output files options
         out_options = [s["one_file"], s["two_files"]]
-        self._cmb_out_files.config(values=out_options)
-        cur_out = getattr(self, "_out_files_idx", 0)
-        self._cmb_out_files.current(cur_out)
-        self._out_files_var.set(out_options[cur_out])
+        self._cmb_out_files.blockSignals(True)
+        self._cmb_out_files.clear()
+        self._cmb_out_files.addItems(out_options)
+        self._cmb_out_files.setCurrentIndex(getattr(self, "_out_files_idx", 0))
+        self._cmb_out_files.blockSignals(False)
 
-        # Trans lang options
         trans_options = [s["lang_en"], s["lang_vi"], s["lang_zh"]]
-        self._cmb_trans.config(values=trans_options)
-        cur_trans = getattr(self, "_trans_idx", 0)
-        self._cmb_trans.current(cur_trans)
-        self._trans_var.set(trans_options[cur_trans])
-
-        if not self._status_var.get():
-            self._status_var.set(s["status_ready"])
-
-    # ── progress update (thread-safe)
-    def _update_progress(self, percent):
-        def _do():
-            if percent is None:
-                # unknown length: pulse
-                try:
-                    self._progress.config(mode="indeterminate")
-                    self._progress.start(12)
-                except Exception:
-                    pass
-                self._progress_label.config(text="")
-            else:
-                try:
-                    self._progress.stop()
-                except Exception:
-                    pass
-                self._progress.config(mode="determinate")
-                self._progress['value'] = max(0, min(100, int(percent)))
-                self._progress_label.config(text=f"{int(self._progress['value'])}%")
-        self.after(0, _do)
+        self._cmb_trans.blockSignals(True)
+        self._cmb_trans.clear()
+        self._cmb_trans.addItems(trans_options)
+        self._cmb_trans.setCurrentIndex(getattr(self, "_trans_idx", 0))
+        self._cmb_trans.blockSignals(False)
 
     def _on_ui_lang_change(self):
-        self._ui_lang = self._ui_lang_var.get()
+        langs = ["vi", "en", "zh"]
+        self._ui_lang = langs[self._lang_combo.currentIndex()]
         self._refresh_lang()
 
-    def _on_out_files_change(self, _=None):
-        s = STRINGS[self._ui_lang]
-        two_files = s["two_files"]
-        is_two = self._out_files_var.get() == two_files
-        self._out_files_idx = 1 if is_two else 0
-        self._cmb_trans.config(state="readonly" if is_two else "disabled")
+    def _on_out_files_change(self):
+        self._out_files_idx = self._cmb_out_files.currentIndex()
+        self._cmb_trans.setEnabled(self._out_files_idx == 1)
 
-    # ── browse ────────────────────────────────────────────────
     def _browse_input(self):
-        path = filedialog.askopenfilename(
-            filetypes=[("Media Files", "*.mp4 *.mov *.mkv *.wav *.mp3 *.m4a *.avi"),
-                       ("All Files", "*.*")]
-        )
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select video/audio file", "", "Media Files (*.mp4 *.avi *.mov *.mp3 *.wav)")
         if path:
-            self._input_var.set(path)
-            # Auto-set output folder to same dir as input
-            if not self._output_var.get():
-                self._output_var.set(os.path.dirname(path))
+            self._input_edit.setText(path)
 
     def _browse_output(self):
-        path = filedialog.askdirectory()
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select output folder")
         if path:
-            self._output_var.set(path)
+            self._output_edit.setText(path)
 
-    def _open_output_folder(self):
-        folder = self._output_var.get()
-        if folder and os.path.isdir(folder):
-            if sys.platform == "win32":
-                os.startfile(folder)
-            elif sys.platform == "darwin":
-                os.system(f'open "{folder}"')
-            else:
-                os.system(f'xdg-open "{folder}"')
-
-    # ── get settings ──────────────────────────────────────────
-    def _get_src_lang_code(self):
-        s = STRINGS[self._ui_lang]
-        mapping = {
-            s["lang_vi"]: "vi",
-            s["lang_en"]: "en",
-            s["lang_zh"]: "zh",
-            s["auto"]: None,
-        }
-        return mapping.get(self._src_lang_var.get())
-
-    def _get_trans_lang_code(self):
-        s = STRINGS[self._ui_lang]
-        mapping = {
-            s["lang_vi"]: "vi",
-            s["lang_en"]: "en",
-            s["lang_zh"]: "zh",
-        }
-        return mapping.get(self._trans_var.get(), "en")
-
-    def _is_two_files(self):
-        return self._out_files_var.get() == STRINGS[self._ui_lang]["two_files"]
-
-    # ── log ───────────────────────────────────────────────────
-    def _log(self, msg):
-        def _do():
-            self._log_text.config(state="normal")
-            self._log_text.insert("end", msg + "\n")
-            self._log_text.see("end")
-            self._log_text.config(state="disabled")
-        self.after(0, _do)
-
-    def _set_status(self, key):
-        self.after(0, lambda: self._status_var.set(STRINGS[self._ui_lang][key]))
-
-    # ── start / cancel ────────────────────────────────────────
     def _on_start(self):
-        s = STRINGS[self._ui_lang]
-        input_path = self._input_var.get().strip()
-        output_folder = self._output_var.get().strip()
+        if not self._input_edit.text() or not self._output_edit.text():
+            QtWidgets.QMessageBox.warning(self, "Error", "Please select input file and output folder")
+            return
 
-        if not input_path:
-            messagebox.showwarning(s["title"], s["err_no_input"]); return
-        if not output_folder:
-            messagebox.showwarning(s["title"], s["err_no_output"]); return
-
-        try:
-            import faster_whisper  # noqa: F401
-        except ImportError:
-            messagebox.showerror(s["title"], s["err_no_whisper"]); return
-
-        if self._is_two_files():
-            try:
-                import argostranslate  # noqa: F401
-            except ImportError:
-                messagebox.showerror(s["title"], s["err_no_argos"]); return
-
-        self._cancel_event.clear()
         self._running = True
-        self._btn_start.config(state="disabled")
-        self._btn_cancel.config(state="normal")
-        self._update_progress(None)
-        self._set_status("status_running")
-        # focus log pane on start
-        try:
-            self._log_text.focus_set()
-        except Exception:
-            pass
+        self._btn_start.setEnabled(False)
+        self._btn_cancel.setEnabled(True)
+        self._progress.setValue(0)
 
-        thread = threading.Thread(target=self._worker, daemon=True)
-        thread.start()
+        src_idx = self._cmb_src_lang.currentIndex()
+        src_lang = ["auto", "vi", "en", "zh"][src_idx]
+        model_size = self._cmb_model.currentText()
+        output_files = self._cmb_out_files.currentIndex()
+        trans_lang = ["en", "vi", "zh"][self._cmb_trans.currentIndex()]
+
+        self._worker = Worker(self._input_edit.text(), self._output_edit.text(), src_lang, model_size, output_files, trans_lang)
+        self._worker_thread = QtCore.QThread()
+        self._worker.moveToThread(self._worker_thread)
+
+        self._worker_thread.started.connect(self._worker.run)
+        self._worker.log_signal.connect(self._on_log)
+        self._worker.progress_signal.connect(self._on_progress)
+        self._worker.finished_signal.connect(self._on_finished)
+
+        self._worker_thread.start()
 
     def _on_cancel(self):
-        self._cancel_event.set()
-        self._set_status("status_cancel")
+        if self._worker:
+            self._worker.cancel_event.set()
+        self._running = False
+        self._btn_start.setEnabled(True)
+        self._btn_cancel.setEnabled(False)
 
-    def _finish(self, success, paths=None):
-        def _do():
-            # update to final state on success, otherwise clear
-            self._running = False
-            self._btn_start.config(state="normal")
-            self._btn_cancel.config(state="disabled")
-            s = STRINGS[self._ui_lang]
-            if success and paths:
-                try:
-                    self._update_progress(100)
-                except Exception:
-                    pass
-                self._set_status("status_done")
-                messagebox.showinfo(
-                    s["title"],
-                    s["done_msg"].format(paths="\n".join(paths))
-                )
-                try:
-                    self.focus_set()
-                except Exception:
-                    pass
-            elif not self._cancel_event.is_set():
-                try:
-                    self._update_progress(0)
-                except Exception:
-                    pass
-                self._status_var.set(s["status_ready"])
-        self.after(0, _do)
+    def _on_log(self, msg):
+        self._log_text.append(msg)
 
-    # ── worker (background thread) ────────────────────────────
-    def _worker(self):
-        s = STRINGS[self._ui_lang]
-        input_path   = self._input_var.get().strip()
-        output_folder = self._output_var.get().strip()
-        src_lang     = self._get_src_lang_code()
-        model_size   = self._model_var.get()
-        two_files    = self._is_two_files()
-        trans_lang   = self._get_trans_lang_code() if two_files else None
+    def _on_progress(self, percent):
+        self._progress.setValue(percent)
 
-        # Kiểm tra file
-        if not os.path.isfile(input_path):
-            self._log(s["err_file_not_found"])
-            messagebox.showerror(s["title"], s["err_file_not_found"])
-            self._finish(False)
-            return
+    def _on_finished(self, success, paths):
+        if self._worker_thread:
+            self._worker_thread.quit()
+            self._worker_thread.wait()
 
-        # Transcribe
-        try:
-            segments, detected_lang = transcribe(
-                input_path, src_lang, model_size,
-                self._log, self._cancel_event
-            )
-        except Exception as e:
-            self._log(f"ERROR: {e}")
-            self._finish(False)
-            return
+        self._running = False
+        self._btn_start.setEnabled(True)
+        self._btn_cancel.setEnabled(False)
 
-        # transcribe done — update progress
-        try:
-            self._update_progress(40)
-        except Exception:
-            pass
+        if success:
+            QtWidgets.QMessageBox.information(self, "Success", f"Subtitles created successfully!")
+            self._log_text.clear()
+        else:
+            QtWidgets.QMessageBox.critical(self, "Error", "Process failed or cancelled")
 
-        if self._cancel_event.is_set():
-            self._finish(False)
-            return
-        if not segments:
-            self._log(s["err_no_speech"])
-            messagebox.showwarning(s["title"], s["err_no_speech"])
-            self._finish(False)
-            return
-
-        # Lưu file gốc
-        base_name = os.path.splitext(os.path.basename(input_path))[0]
-        srt_original = os.path.join(output_folder, base_name + ".srt")
-        if not save_srt(srt_original, build_srt(segments), self._log):
-            self._finish(False)
-            return
-
-        # saved original
-        try:
-            self._update_progress(60)
-        except Exception:
-            pass
-
-        saved_paths = [srt_original]
-
-        # Dịch và lưu file thứ 2
-        if two_files and trans_lang:
-            detected = src_lang if src_lang else detected_lang
-            detected = normalize_lang(detected)
-            target = normalize_lang(trans_lang)
-            if detected == target:
-                self._log("Source and target languages are the same — skipping translation.")
-                saved_paths.append(srt_original)
-            else:
-                try:
-                    pkg_ok = ensure_argos_package(detected, target, self._log)
-                except Exception as e:
-                    self._log(f"ERROR installing translation package: {e}")
-                    pkg_ok = False
-
-                if pkg_ok and not self._cancel_event.is_set():
-                    try:
-                        if detected != "en" and target != "en":
-                            # translate through English if direct package is unavailable
-                            self._log(f"Translating via English: {detected} -> en -> {target}")
-                            eng_segments = translate_segments(
-                                segments, detected, "en", self._log, self._cancel_event,
-                                progress_fn=self._update_progress
-                            )
-                            if eng_segments is None:
-                                trans_segments = None
-                            else:
-                                trans_segments = translate_segments(
-                                    eng_segments, "en", target, self._log, self._cancel_event,
-                                    progress_fn=self._update_progress
-                                )
-                        else:
-                            trans_segments = translate_segments(
-                                segments, detected, target, self._log, self._cancel_event,
-                                progress_fn=self._update_progress
-                            )
-                    except Exception as e:
-                        self._log(f"ERROR during translation: {e}")
-                        trans_segments = None
-
-                    if trans_segments and not self._cancel_event.is_set():
-                        srt_trans = os.path.join(
-                            output_folder, f"{base_name}_{trans_lang}.srt"
-                        )
-                        if save_srt(srt_trans, build_srt(trans_segments), self._log):
-                            saved_paths.append(srt_trans)
-                            try:
-                                self._update_progress(100)
-                            except Exception:
-                                pass
-
-        if self._cancel_event.is_set():
-            self._finish(False)
-            return
-
-        self._finish(True, saved_paths)
+    def _open_output_folder(self):
+        path = self._output_edit.text()
+        if path and os.path.isdir(path):
+            os.startfile(path)
 
 
-# ─── ENTRY POINT ─────────────────────────────────────────────
+def main():
+    app = QtWidgets.QApplication(sys.argv)
+    window = App()
+    window.show()
+    sys.exit(app.exec())
+
 
 if __name__ == "__main__":
-    app = App()
-    app.mainloop()
+    main()
