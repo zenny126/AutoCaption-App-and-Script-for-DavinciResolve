@@ -1,0 +1,239 @@
+/* AutoCaption Stylesheet */
+
+/* Main Window and Panels */
+QMainWindow {
+    background-color: #000000;
+}
+
+QFrame#TopBar {
+    background-color: #0A0A0A;
+    border: 1px solid #262626;
+    border-radius: 24px;
+}
+
+QFrame#LeftCard {
+    background-color: #0A0A0A;
+    border: 1px solid #262626;
+    border-radius: 24px;
+}
+
+QFrame#LogPanel {
+    background-color: #0A0A0A;
+    border: 1px solid #262626;
+    border-radius: 24px;
+}
+
+QFrame#StatusFrame {
+    background-color: #0A0A0A;
+    border: 1px solid #262626;
+    border-radius: 16px;
+}
+
+/* Group Frame containers */
+QFrame.GroupFrame {
+    background-color: #0A0A0A;
+    border: 1px solid #262626;
+    border-radius: 24px;
+}
+
+/* Drag & Drop Zone */
+QFrame#DropZone {
+    border: 2px dashed #404040;
+    border-radius: 20px;
+    background-color: #000000;
+}
+
+QFrame#DropZone:hover {
+    border: 2px dashed #A3A3A3;
+    background-color: #0A0A0A;
+}
+
+/* File Card Items */
+QFrame.CardFrame {
+    background-color: #000000;
+    border: 1px solid #262626;
+    border-radius: 20px;
+}
+
+QFrame.CardFrame:hover {
+    background-color: #171717;
+    border: 1px solid #737373;
+}
+
+/* Inputs & Selectors */
+QLineEdit, QComboBox {
+    background-color: #000000;
+    color: #F5F5F5;
+    border: 1px solid #262626;
+    border-radius: 16px;
+    min-height: 32px;
+    padding: 0px 16px;
+}
+
+QLineEdit:focus, QComboBox:focus {
+    border: 1px solid #737373;
+}
+
+QLineEdit:disabled, QComboBox:disabled {
+    background-color: #0A0A0A;
+    color: #525252;
+    border: 1px solid #171717;
+}
+
+QComboBox::drop-down {
+    border: none;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #000000;
+    color: #F5F5F5;
+    border-radius: 16px;
+}
+
+QComboBox QAbstractItemView::item:selected {
+    background-color: #404040;
+}
+
+/* Log Output */
+QTextEdit#LogText {
+    background-color: #000000;
+    color: #E5E5E5;
+    border: 1px solid #262626;
+    border-radius: 24px;
+    padding: 16px;
+}
+
+/* Progress Bar */
+QProgressBar {
+    border: 1px solid #262626;
+    border-radius: 12px;
+    text-align: center;
+    background-color: #000000;
+    color: transparent;
+}
+
+QProgressBar::chunk {
+    background-color: #D4D4D4;
+    border-radius: 10px;
+}
+
+/* Buttons */
+QPushButton#ToggleLogBtn {
+    background-color: #171717;
+    color: #E5E5E5;
+    border: 1px solid #404040;
+    border-radius: 16px;
+    min-height: 32px;
+    padding: 0px 16px;
+    font-weight: bold;
+}
+
+QPushButton#ToggleLogBtn:hover {
+    background-color: #262626;
+    border: 1px solid #737373;
+}
+
+QPushButton.NormalBtn {
+    background-color: #171717;
+    color: #E5E5E5;
+    border: 1px solid #262626;
+    border-radius: 16px;
+    min-height: 32px;
+    padding: 0px 16px;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+QPushButton.NormalBtn:hover {
+    background-color: #262626;
+    border: 1px solid #404040;
+}
+
+QPushButton.NormalBtn:pressed {
+    background-color: #000000;
+}
+
+QPushButton.NormalBtn:disabled {
+    background-color: #0A0A0A;
+    color: #525252;
+    border: none;
+}
+
+QPushButton#StartBtn {
+    background-color: #E5E5E5;
+    color: #000000;
+    border: none;
+    border-radius: 24px;
+    font-weight: bold;
+    font-size: 15px;
+}
+
+QPushButton#StartBtn:hover {
+    background-color: #FFFFFF;
+}
+
+QPushButton#StartBtn:pressed {
+    background-color: #A3A3A3;
+}
+
+QPushButton#StartBtn:disabled {
+    background-color: #171717;
+    color: #525252;
+}
+
+/* Success Popup */
+QFrame#SuccessPopupFrame {
+    background-color: #0A0A0A;
+    border: 1px solid #404040;
+    border-radius: 24px;
+}
+
+QListWidget#SuccessList {
+    background-color: #000000;
+    border: 1px solid #262626;
+    border-radius: 12px;
+    color: #A3A3A3;
+    font-size: 11px;
+    padding: 8px;
+}
+
+QPushButton#SuccessCloseBtn {
+    background: #171717;
+    color: #A3A3A3;
+    font-size: 14px;
+    border: none;
+    border-radius: 15px;
+}
+
+QPushButton#SuccessCloseBtn:hover {
+    background: #262626;
+    color: #FFFFFF;
+}
+
+QPushButton#SuccessOpenFolderBtn {
+    background-color: #171717;
+    color: #E5E5E5;
+    border: 1px solid #262626;
+    border-radius: 20px;
+    min-height: 40px;
+    padding: 0px 20px;
+    font-weight: bold;
+}
+
+QPushButton#SuccessOpenFolderBtn:hover {
+    background-color: #262626;
+}
+
+QPushButton#SuccessOkBtn {
+    background-color: #E5E5E5;
+    color: #000000;
+    border: none;
+    border-radius: 20px;
+    min-height: 40px;
+    padding: 0px 30px;
+    font-weight: bold;
+}
+
+QPushButton#SuccessOkBtn:hover {
+    background-color: #FFFFFF;
+}
