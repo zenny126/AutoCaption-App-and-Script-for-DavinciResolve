@@ -1,4 +1,2 @@
 faster-whisper
-deep_translator
 PySide6
-argostranslate

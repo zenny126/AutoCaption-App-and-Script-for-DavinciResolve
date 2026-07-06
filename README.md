@@ -1,154 +1,124 @@
-# AutoCaption VEC
+# AutoCaption
 
-AutoCaption VEC tạo phụ đề tự động cho file audio/video bằng Whisper chạy local và có thể dịch phụ đề sang ngôn ngữ khác bằng Argos Translate.
+AutoCaption creates automatic subtitles (SRT) for audio/video files using Whisper running locally (no internet required after initial model download).
 
-Dự án bao gồm:
-- `scripts/AutoCaptionVEC.py` — ứng dụng GUI standalone (Tkinter) để tạo SRT ngay trong Windows/macOS/Linux chạy ngoài không cần thông qua DR
-- `scripts/AutoCaptionVEC4DR.lua` — script cho DaVinci Resolve, gọi `transcribe_local.py` để tạo phụ đề.
-- `scripts/transcribe_local.py` — engine xử lý speech-to-text và dịch thuật.
+The project contains two main independent components:
+1. **Standalone GUI App** ([scripts/AutoCaption.py]) — A modern desktop application built with PySide6 supporting multi-file batch processing, drag & drop, card visual grids, and a toggleable log panel.
+2. **DaVinci Resolve Script** ([scripts/AutoCaption4DR.lua]) — A completely standalone Lua script for DaVinci Resolve. It automatically generates subtitles for the selected audio file and imports them directly into the Media Pool and Timeline. No secondary Python files are needed in the DaVinci Scripts directory.
 
-- ✅ Hoạt động offline sau khi tải model và gói dịch lần đầu
-- ✅ Hỗ trợ phát hiện ngôn ngữ tự động hoặc chọn tay
-- ✅ Xuất 1 file SRT gốc hoặc 2 file SRT (gốc + dịch)
-- ✅ Hỗ trợ Tiếng Việt / English / 中文
+## Features
 
----
-
-## Yêu cầu
-
-| Thứ | Mô tả |
-|-----|-------|
-| Python | 3.9 trở lên |
-| Dung lượng | ~1.5GB (model `medium`) hoặc ~3GB (model `large-v3`) |
-| Internet | Chỉ cần lần đầu tải model Whisper và gói dịch Argos Translate |
+- ✅ **Fully Offline** after initial model download.
+- ✅ **Automatic Language Detection (LID)** — Optimized for multi-lingual accuracy.
+- ✅ **GPU (CUDA) Support** — Automatically falls back to CPU if no CUDA GPU is found.
+- ✅ **Timestamp Capping** — Automatically prevents Whisper hallucinations by capping subtitle timestamps to the actual video duration.
+- ✅ **Elegant Dark Slate Theme** designed to seamlessly match DaVinci Resolve's aesthetic.
 
 ---
 
-## Cài đặt
+## Requirements
 
-### Bước 1 — Clone hoặc giải nén repo
+| Requirement | Description |
+|---|---|
+| Python | 3.9 or higher |
+| Libraries | `faster-whisper`, `PySide6` |
+| Disk Space | ~1.5GB for `large-v3-turbo` model |
+| GPU (Optional) | NVIDIA GPU with CUDA support for faster processing |
 
-```bash
-git clone <repo-url>
-```
+---
 
-hoặc tải file ZIP rồi giải nén.
+## Installation
 
-### Bước 2 — Cài thư viện Python
+### Step 1 — Install Python Libraries
+
+Install the required Python dependencies by running:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Nếu muốn dùng tính năng dịch, cài thêm:
+*(This will install `faster-whisper` and `PySide6`)*
+
+---
+
+## Standalone GUI App (`AutoCaption.py`)
+
+Run the desktop application:
 
 ```bash
-pip install argostranslate
+python scripts/AutoCaption.py
 ```
 
-> Lưu ý: `requirements.txt` hiện chỉ chứa `faster-whisper` và một số thư viện hỗ trợ. Thư viện `argostranslate` cần cài riêng nếu bạn dùng tùy chọn dịch.
+### Usage
+1. **Drag & Drop** media files (audio/video) into the top dashed zone, or click **Browse...** to select files.
+2. The drop zone will display visual file cards. You can double-click any card or list item to remove it.
+3. Select the **Output folder**.
+4. Choose the **Model size** (defaults to `large-v3-turbo`) and **Processing Device** (GPU is selected by default if CUDA is available).
+5. Click **Generate subtitles**.
+6. When complete, a custom popup dialog will allow you to quickly **Open Folder** or click **OK**.
+7. Toggle the **Show Log / Hide Log** button to view or hide the processing log (the window dynamically resizes to stay compact when logs are hidden).
 
 ---
 
-## Chạy standalone app
+## DaVinci Resolve Integration (`AutoCaption4DR.lua`)
 
-```bash
-python scripts/AutoCaptionVEC.py
-```
+The Lua script runs fully standalone inside DaVinci Resolve. It dynamically writes and executes its execution script in the Temp directory, so you only need to copy a single file.
 
-Hoặc dùng `python3` nếu hệ thống của bạn yêu cầu.
-
-### Sử dụng app
-
-1. Chọn file đầu vào audio/video.
-2. Chọn thư mục lưu kết quả.
-3. Chọn ngôn ngữ nguồn hoặc `Auto-detect`.
-4. Chọn model Whisper.
-5. Chọn `1 File` (chỉ SRT gốc) hoặc `2 Files` (gốc + dịch).
-6. Nếu chọn `2 Files`, chọn ngôn ngữ dịch.
-7. Bấm `Generate Subtitles` và chờ hoàn tất.
-
-Kết quả được lưu trong thư mục đầu ra, với tên file dựa trên tên file nguồn.
-
----
-
-## Chạy trong DaVinci Resolve
-
-1. Copy `scripts/AutoCaptionVEC_Generate.lua` và `scripts/transcribe_local.py` vào cùng thư mục Scripts của Resolve.
-2. Mở DaVinci Resolve và mở project cần tạo phụ đề.
-3. Vào **Workspace → Scripts → AutoCaptionVEC_Generate**.
-4. Chọn file audio/video nguồn.
-5. Chọn ngôn ngữ, model, số file xuất, và nếu cần chọn ngôn ngữ dịch.
-6. Bấm **OK** và chờ xử lý.
-
-Nếu import SRT vào Media Pool/Timeline không thành công, script sẽ thông báo đường dẫn file SRT để bạn import thủ công.
-
----
-
-## Kích thước model Whisper
-
-| Model | Dung lượng | Tốc độ (CPU) | Độ chính xác |
-|-------|-----------|--------------|--------------|
-| tiny | ~75MB | Rất nhanh | Thấp |
-| base | ~145MB | Nhanh | Khá |
-| small | ~460MB | Khá nhanh | Tốt |
-| **medium** ⭐ | ~1.5GB | Trung bình | Tốt |
-| large-v3 | ~3GB | Chậm | Cao nhất |
-
-> Khuyến nghị dùng model `medium` cho máy không có GPU rời.
-
----
-
-## Dịch thuật (File 2)
-
-Khi chọn `2 Files`, ứng dụng sẽ dịch phụ đề sang ngôn ngữ đích bằng `argostranslate`.
-
-- Lần đầu dịch một cặp ngôn ngữ mới, Argos Translate sẽ tải gói ngôn ngữ (cần internet).
-- Sau khi tải xong, dịch thuật sẽ hoạt động offline.
-- Nếu phần dịch thất bại với một đoạn, script sẽ giữ nguyên bản gốc và tiếp tục.
-- Nếu không tìm thấy gói dịch cho cặp ngôn ngữ yêu cầu, script sẽ báo lỗi rõ ràng.
-
-### Ngôn ngữ dịch
-
-- Standalone app: English, Vietnamese, Chinese
-- DaVinci Resolve mode: English, Vietnamese, Chinese, Spanish, French, German, Japanese, Korean
-
----
-
-## Cấu trúc thư mục
-
-```
-AutoCaptionVEC/
-├── scripts/
-│   ├── AutoCaptionVEC.py
-│   ├── AutoCaptionVEC_Generate.lua
-│   └── transcribe_local.py
-├── requirements.txt
-└── README.md
-```
-
----
-
-## Cấu hình nâng cao
-
-Mở `scripts/AutoCaptionVEC_Generate.lua`, sửa dòng:
+### Setup & Usage
+1. Copy [scripts/AutoCaption4DR.lua]to the DaVinci Resolve Scripts folder:
+   - **Windows**: `C:\Users\<Username>\AppData\Roaming\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Comp\`
+   - **macOS**: `/Users/<Username>/Library/Application Support/Blackmagic Design/DaVinci Resolve/Support/Fusion/Scripts/Comp/`
+   If you want to change the Whisper model or Python executable used by the DaVinci Resolve script, open `scripts/AutoCaption4DR.lua` and modify the variables at the top of the file:
 
 ```lua
-local PYTHON_EXE = "python"  -- đổi thành "python3" nếu cần (thường trên macOS)
+local PYTHON_EXE = "python"        -- Change to "python3" on macOS if needed
+local MODEL = "large-v3-turbo"     -- Change to "tiny", "base", "small", "medium", or "large-v3"
+```
+
+2. Open DaVinci Resolve and open your project.
+3. In Resolve, go to **Workspace → Scripts → AutoCaption4DR**.
+4. Select the media file to transcribe.
+5. The subtitle (SRT) file will be generated **in the same folder** as your input video/audio.
+6. The script will automatically import the SRT file into your Media Pool and append it to your Timeline.
+
+---
+
+## Whisper Models
+
+| Model | Size | Speed (CPU) | Accuracy |
+|-------|------|--------------|----------|
+| tiny | ~75MB | Very Fast | Low |
+| base | ~145MB | Fast | Fair |
+| small | ~460MB | Moderate | Good |
+| medium | ~1.5GB | Slow | Very Good |
+| **large-v3-turbo** ⭐ | ~1.5GB | Fast | High (Recommended) |
+| large-v3 | ~3GB | Very Slow | Highest |
+
+---
+
+---
+
+## Directory Structure
+
+```
+AutoCaption/
+├── scripts/
+│   ├── AutoCaption.py          # Standalone PySide6 App
+│   └── AutoCaption4DR.lua      # Standalone DaVinci Resolve Script
+├── requirements.txt            # Python dependencies
+└── README.md                   # This instruction file
 ```
 
 ---
 
 ## Troubleshooting
 
-| Lỗi | Giải pháp |
-|-----|-----------|
-| `faster-whisper not installed` | Chạy `pip install -r requirements.txt` |
-| `argostranslate not installed` | Chạy `pip install argostranslate` |
-| Không tìm thấy gói dịch | Kiểm tra internet, Argos cần tải gói lần đầu |
-| Script chạy quá chậm | Đổi sang model `small` hoặc `base` |
-| Không tạo được file SRT | Kiểm tra quyền ghi và thư mục đầu ra |
-| Phụ đề không tự thêm vào timeline | Kéo thủ công file `.srt` từ Media Pool vào timeline |
+| Issue | Solution |
+|---|---|
+| `faster-whisper` not installed | Run `pip install -r requirements.txt` |
+| GPU processing not working | Verify CUDA toolkit and cuDNN compatibility with CTranslate2. The app will automatically fall back to CPU if CUDA fails. |
+| Subtitle extends beyond video end | Already fixed! Subtitles are capped at the media file's actual duration. |
+| Lua Script fails to import to Media Pool | If automatic timeline import fails, a popup shows the SRT location so you can drag-and-drop it manually. |
 
 ---
 
