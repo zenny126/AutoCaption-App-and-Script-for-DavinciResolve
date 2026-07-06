@@ -191,7 +191,7 @@ $modelLabel.Size = New-Object System.Drawing.Size(150,20)
 $form.Controls.Add($modelLabel)
 
 $modelDropdown = New-Object System.Windows.Forms.ComboBox
-$modelDropdown.Items.AddRange(@("tiny", "base", "small", "medium", "large-v3"))
+$modelDropdown.Items.AddRange(@("tiny", "base", "small", "medium", "large-v3-turbo", "large-v3"))
 $modelDropdown.SelectedIndex = 3
 $modelDropdown.Location = New-Object System.Drawing.Point(180,60)
 $modelDropdown.Size = New-Object System.Drawing.Size(280,25)

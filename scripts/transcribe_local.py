@@ -16,6 +16,9 @@ output_files:    1 = only original SRT, 2 = original + translated SRT
 import sys
 import os
 
+# Disable Hugging Face symlinks warning on Windows
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
 # Configure UTF-8 output to avoid UnicodeEncodeError on Windows
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -63,27 +66,46 @@ def ensure_argos_package(source_lang, target_lang):
     import argostranslate.package
     import argostranslate.translate
 
-    installed_languages = argostranslate.translate.get_installed_languages()
-    from_lang = next((l for l in installed_languages if l.code == source_lang), None)
-    to_lang = next((l for l in installed_languages if l.code == target_lang), None)
+    def path_exists_locally(s, t):
+        installed_languages = argostranslate.translate.get_installed_languages()
+        from_lang = next((l for l in installed_languages if l.code == s), None)
+        to_lang = next((l for l in installed_languages if l.code == t), None)
+        return from_lang and to_lang and from_lang.get_translation(to_lang)
 
-    if from_lang and to_lang and from_lang.get_translation(to_lang):
-        return True
-
-    print(f"Đang tải gói dịch {source_lang} -> {target_lang} (chỉ cần internet lần đầu)...")
-    argostranslate.package.update_package_index()
-    available_packages = argostranslate.package.get_available_packages()
-    package_to_install = next(
-        (p for p in available_packages if p.from_code == source_lang and p.to_code == target_lang),
-        None
-    )
-    if not package_to_install:
-        print(f"ERROR: Không tìm thấy gói dịch {source_lang} -> {target_lang} trong Argos Translate.")
+    def install_single_package(s, t):
+        if path_exists_locally(s, t):
+            return True
+        print(f"Đang tải gói dịch {s} -> {t} (chỉ cần internet lần đầu)...")
+        try:
+            argostranslate.package.update_package_index()
+            available_packages = argostranslate.package.get_available_packages()
+            pkg = next((p for p in available_packages if p.from_code == s and p.to_code == t), None)
+            if pkg:
+                argostranslate.package.install_from_path(pkg.download())
+                print(f"OK: Đã cài gói dịch {s} -> {t}.")
+                return True
+        except Exception as ex:
+            print(f"WARNING: Không thể cài gói {s} -> {t}: {ex}")
         return False
 
-    argostranslate.package.install_from_path(package_to_install.download())
-    print(f"OK: Đã cài gói dịch {source_lang} -> {target_lang}.")
-    return True
+    # 1. Thử cài trực tiếp
+    if path_exists_locally(source_lang, target_lang):
+        return True
+
+    if install_single_package(source_lang, target_lang):
+        return True
+
+    # 2. Thử cài cầu nối qua tiếng Anh "en"
+    if source_lang != "en" and target_lang != "en":
+        print(f"Không tìm thấy gói dịch trực tiếp {source_lang} -> {target_lang}. Thử sử dụng cầu nối tiếng Anh (en)...")
+        ok_src_to_en = install_single_package(source_lang, "en")
+        ok_en_to_tgt = install_single_package("en", target_lang)
+        if ok_src_to_en and ok_en_to_tgt:
+            print(f"OK: Đã thiết lập cầu nối dịch thuật: {source_lang} -> en -> {target_lang}")
+            return True
+
+    print(f"ERROR: Không thể thiết lập dịch thuật từ {source_lang} sang {target_lang}.")
+    return False
 
 
 def translate_text(text, source_lang, target_lang):
@@ -120,11 +142,29 @@ def main():
         print("ERROR: faster-whisper not installed. Run: pip install -r requirements.txt")
         sys.exit(3)
 
-    print(f"Loading Whisper model '{model_size}' (first time may take a few minutes)...")
-    model = WhisperModel(model_size, device="cpu", compute_type="int8")
+    # Detect CUDA support
+    device = "cpu"
+    compute_type = "int8"
+    try:
+        import ctranslate2
+        has_cuda = ctranslate2.get_cuda_device_count() > 0
+    except Exception:
+        try:
+            import torch
+            has_cuda = torch.cuda.is_available()
+        except Exception:
+            has_cuda = False
+
+    if has_cuda:
+        device = "cuda"
+        compute_type = "float16"
+
+    print(f"Loading Whisper model '{model_size}' on {device.upper()} (Compute: {compute_type})...")
+    model = WhisperModel(model_size, device=device, compute_type=compute_type)
 
     print(f"Processing audio: {input_path}")
-    print("Note: Running on CPU may take some time, please wait...")
+    if device == "cpu":
+        print("Note: Running on CPU may take some time, please wait...")
 
     segments, info = model.transcribe(
         input_path,
