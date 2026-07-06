@@ -11,8 +11,8 @@ The project contains two main independent components:
 - ✅ **Fully Offline** after initial model download.
 - ✅ **Automatic Language Detection (LID)** — Optimized for multi-lingual accuracy.
 - ✅ **GPU (CUDA) Support** — Automatically falls back to CPU if no CUDA GPU is found.
-- ✅ **Timestamp Capping** — Automatically prevents Whisper hallucinations by capping subtitle timestamps to the actual video duration.
-- ✅ **Elegant Dark Slate Theme** designed to seamlessly match DaVinci Resolve's aesthetic.
+- ✅ **Multi task** — Work on **Standalone GUI App**
+
 
 ---
 
@@ -52,11 +52,11 @@ python scripts/AutoCaption.py
 ### Usage
 1. **Drag & Drop** media files (audio/video) into the top dashed zone, or click **Browse...** to select files.
 2. The drop zone will display visual file cards. You can double-click any card or list item to remove it.
-3. Select the **Output folder**.
+3. Select the **Output folder**. (defaults to folder hold input media files)
 4. Choose the **Model size** (defaults to `large-v3-turbo`) and **Processing Device** (GPU is selected by default if CUDA is available).
 5. Click **Generate subtitles**.
 6. When complete, a custom popup dialog will allow you to quickly **Open Folder** or click **OK**.
-7. Toggle the **Show Log / Hide Log** button to view or hide the processing log (the window dynamically resizes to stay compact when logs are hidden).
+7. Toggle the **Show Log / Hide Log** button to view or hide the processing log.
 
 ---
 
