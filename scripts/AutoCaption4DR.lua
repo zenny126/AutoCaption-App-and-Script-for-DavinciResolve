@@ -177,9 +177,7 @@ local function Main()
     print("Selected file: " .. inputFile)
 
     -- 2. Transcribe (output SRT next to input file)
-    local inputDir = inputFile:match("^(.*)[/\\\\]") or "."
-    local inputName = inputFile:match("([^/\\\\]+)$"):match("(.+)%..+$") or "output"
-    local srtPath = inputDir .. (isWindows and "\\" or "/") .. inputName .. ".srt"
+    local srtPath = inputFile:gsub("%.%w+$", "") .. ".srt"
 
     local success = runTranscribe(inputFile, srtPath)
     if not success then
