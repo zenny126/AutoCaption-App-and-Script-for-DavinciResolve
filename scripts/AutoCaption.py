@@ -99,14 +99,14 @@ class CardFrame(QtWidgets.QFrame):
 
 
 class SuccessPopup(QtWidgets.QDialog):
-    def __init__(self, saved_paths, parent=None):
+    def __init__(self, saved_paths, failed_files, parent=None):
         super().__init__(parent)
         self.saved_paths = saved_paths
         
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.Dialog)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         
-        self.resize(450, 260)
+        self.resize(480, 280)
         
         # Background frame
         frame = QtWidgets.QFrame(self)
@@ -123,9 +123,20 @@ class SuccessPopup(QtWidgets.QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
         
+        # Header text selection
+        if len(saved_paths) > 0 and len(failed_files) == 0:
+            title_text = "Success"
+            body_text = "Subtitles created successfully!"
+        elif len(saved_paths) > 0 and len(failed_files) > 0:
+            title_text = "Warnings"
+            body_text = "Some subtitles created, but some files failed.\nPlease check if the failed files contain audio tracks or are corrupted."
+        else:
+            title_text = "Failed"
+            body_text = "Failed to create subtitles for all files.\nPlease check if your files contain audio tracks or are corrupted."
+
         # Header
         header_layout = QtWidgets.QHBoxLayout()
-        title_lbl = QtWidgets.QLabel("Success")
+        title_lbl = QtWidgets.QLabel(title_text)
         title_lbl.setStyleSheet("font-size: 18px; font-weight: bold; color: #FFFFFF; border: none; background: transparent;")
         header_layout.addWidget(title_lbl)
         header_layout.addStretch()
@@ -138,18 +149,28 @@ class SuccessPopup(QtWidgets.QDialog):
         layout.addLayout(header_layout)
         
         # Body
-        body_lbl = QtWidgets.QLabel("Subtitles created successfully!")
+        body_lbl = QtWidgets.QLabel(body_text)
         body_lbl.setStyleSheet("font-size: 14px; color: #D4D4D4; border: none; background: transparent;")
         layout.addWidget(body_lbl)
         
         # File list
         self.list_widget = QtWidgets.QListWidget()
         self.list_widget.setObjectName("SuccessList")
-        self.list_widget.setFixedHeight(80)
+        self.list_widget.setFixedHeight(90)
+        
+        # Populate list widget with status icons and colors
         for p in saved_paths:
-            item = QtWidgets.QListWidgetItem(os.path.basename(p))
+            item = QtWidgets.QListWidgetItem(f"✓ {os.path.basename(p)}")
+            item.setForeground(QtGui.QColor("#22c55e"))  # Green color
             item.setToolTip(p)
             self.list_widget.addItem(item)
+            
+        for p, reason in failed_files:
+            item = QtWidgets.QListWidgetItem(f"✗ {os.path.basename(p)} ({reason})")
+            item.setForeground(QtGui.QColor("#ef4444"))  # Red color
+            item.setToolTip(f"Failed: {p}\nReason: {reason}")
+            self.list_widget.addItem(item)
+            
         layout.addWidget(self.list_widget)
         
         # Buttons
@@ -159,6 +180,7 @@ class SuccessPopup(QtWidgets.QDialog):
         open_folder_btn = QtWidgets.QPushButton("Open Folder")
         open_folder_btn.setObjectName("SuccessOpenFolderBtn")
         open_folder_btn.clicked.connect(self.on_open_folder)
+        open_folder_btn.setEnabled(len(saved_paths) > 0)
         
         ok_btn = QtWidgets.QPushButton("OK")
         ok_btn.setObjectName("SuccessOkBtn")
@@ -211,7 +233,7 @@ class Worker(QtCore.QObject):
     log_signal = QtCore.Signal(str)
     progress_signal = QtCore.Signal(int)
     status_signal = QtCore.Signal(str)
-    finished_signal = QtCore.Signal(bool, list)
+    finished_signal = QtCore.Signal(bool, list, list)
     error_signal = QtCore.Signal(str)
     model_ready_signal = QtCore.Signal(object)
 
@@ -229,6 +251,7 @@ class Worker(QtCore.QObject):
     def run(self):
         try:
             saved_paths = []
+            failed_files = []
             total_files = len(self.input_files)
             
             import gc
@@ -243,7 +266,7 @@ class Worker(QtCore.QObject):
                 except Exception as e:
                     self.log_signal.emit(f"ERROR loading model: {e}")
                     self.error_signal.emit(f"Failed to load model: {e}")
-                    self.finished_signal.emit(False, [])
+                    self.finished_signal.emit(False, [], [])
                     return
             else:
                 self.log_signal.emit(f"Reusing cached Whisper model '{self.model_size}'...")
@@ -276,7 +299,9 @@ class Worker(QtCore.QObject):
                 if segments is None:
                     if self.cancel_event.is_set():
                         break
-                    self.log_signal.emit(f"ERROR: Transcription failed for {filename}")
+                    error_msg = detected if detected else "Unknown error"
+                    self.log_signal.emit(f"ERROR: Transcription failed for {filename}: {error_msg}")
+                    failed_files.append((input_file, error_msg))
                     self.progress_signal.emit(int(((idx + 1) * 100) / total_files))
                     continue
                     
@@ -285,6 +310,8 @@ class Worker(QtCore.QObject):
                 srt_path = os.path.join(out_dir, f"{base_name}_{detected}.srt")
                 if save_srt(srt_path, build_srt(segments), self.log_signal.emit):
                     saved_paths.append(srt_path)
+                else:
+                    failed_files.append((input_file, "Failed to save SRT file"))
                     
                 self.progress_signal.emit(int(((idx + 1) * 100) / total_files))
                 
@@ -297,12 +324,12 @@ class Worker(QtCore.QObject):
                 pass
                 
             if self.cancel_event.is_set():
-                self.finished_signal.emit(False, [])
+                self.finished_signal.emit(False, [], [])
             else:
-                self.finished_signal.emit(True, saved_paths)
+                self.finished_signal.emit(True, saved_paths, failed_files)
         except Exception as e:
             self.error_signal.emit(str(e))
-            self.finished_signal.emit(False, [])
+            self.finished_signal.emit(False, [], [])
 
 
 class App(QtWidgets.QMainWindow):
@@ -362,12 +389,6 @@ class App(QtWidgets.QMainWindow):
         title.setStyleSheet("font-size: 18px; font-weight: 700; color: #f8fafc;")
         top_layout.addWidget(title)
         top_layout.addStretch()
-        
-        self._btn_unload_model = QtWidgets.QPushButton("Unload Model")
-        self._btn_unload_model.setObjectName("UnloadModelBtn")
-        self._btn_unload_model.clicked.connect(self._unload_cached_model)
-        self._btn_unload_model.setEnabled(False)
-        top_layout.addWidget(self._btn_unload_model)
 
         self._btn_toggle_log = QtWidgets.QPushButton("Show Log")
         self._btn_toggle_log.setObjectName("ToggleLogBtn")
@@ -764,7 +785,6 @@ class App(QtWidgets.QMainWindow):
         self._running = True
         self._btn_start.setEnabled(False)
         self._btn_cancel.setEnabled(True)
-        self._btn_unload_model.setEnabled(False)
         self._progress.setValue(0)
         self._log_text.clear()
 
@@ -814,7 +834,6 @@ class App(QtWidgets.QMainWindow):
                     torch.cuda.empty_cache()
             except ImportError:
                 pass
-            self._btn_unload_model.setEnabled(False)
             self._status_label.setText("Model unloaded.")
             self._log_text.append("\n[System] Whisper model unloaded to free memory.")
 
@@ -825,8 +844,6 @@ class App(QtWidgets.QMainWindow):
         self._running = False
         self._btn_start.setEnabled(True)
         self._btn_cancel.setEnabled(False)
-        if self._cached_model is not None:
-            self._btn_unload_model.setEnabled(True)
 
     def _on_log(self, msg):
         self._log_text.append(msg)
@@ -844,7 +861,7 @@ class App(QtWidgets.QMainWindow):
     def _on_error(self, error_msg):
         self._log_text.append(f"\n[ERROR] {error_msg}")
 
-    def _on_finished(self, success, paths):
+    def _on_finished(self, success, saved_paths, failed_files):
         if self._worker_thread:
             self._worker_thread.quit()
             self._worker_thread.wait()
@@ -852,12 +869,17 @@ class App(QtWidgets.QMainWindow):
         self._running = False
         self._btn_start.setEnabled(True)
         self._btn_cancel.setEnabled(False)
-        if self._cached_model is not None:
-            self._btn_unload_model.setEnabled(True)
+
+        # Automatically unload the Whisper model when the task finishes (succeeds, cancels, or fails)
+        self._unload_cached_model()
+
+        # Clear worker references to ensure garbage collection
+        self._worker = None
+        self._worker_thread = None
 
         if success:
             self._status_label.setText("Finished successfully!")
-            popup = SuccessPopup(paths, self)
+            popup = SuccessPopup(saved_paths, failed_files, self)
             popup.exec()
         else:
             self._status_label.setText("Cancelled or failed.")

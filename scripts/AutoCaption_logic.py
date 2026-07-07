@@ -47,6 +47,17 @@ def transcribe(input_path, language, model, log_fn=print, cancel_event=None, pro
     """Whisper transcription with incremental progress and cancellation check"""
     try:
         log_fn(f"Processing audio: {input_path}")
+
+        # Check if the file contains an audio stream to prevent faster-whisper IndexError
+        try:
+            import av
+            with av.open(input_path) as container:
+                if not container.streams.audio:
+                    log_fn("ERROR: The input file does not contain any audio tracks to transcribe.")
+                    return None, "No audio tracks found"
+        except Exception as av_err:
+            # Let it proceed to transcribe in case Whisper can decode it using other fallbacks
+            pass
         
         # Default transcription options, allows overrides via kwargs
         options = {
@@ -86,8 +97,10 @@ def transcribe(input_path, language, model, log_fn=print, cancel_event=None, pro
                 
         return segments_list, detected
     except Exception as e:
-        log_fn(f"ERROR during transcription: {e}")
-        return None, None
+        import traceback
+        tb = traceback.format_exc()
+        log_fn(f"ERROR during transcription: {e}\n{tb}")
+        return None, str(e)
 
 def build_srt(segments):
     """Format segments list into standard SRT text"""

@@ -133,26 +133,7 @@ QPushButton#ToggleLogBtn:hover {
     border: 1px solid #737373;
 }
 
-QPushButton#UnloadModelBtn {
-    background-color: #171717;
-    color: #E5E5E5;
-    border: 1px solid #404040;
-    border-radius: 16px;
-    min-height: 32px;
-    padding: 0px 16px;
-    font-weight: bold;
-}
 
-QPushButton#UnloadModelBtn:hover {
-    background-color: #262626;
-    border: 1px solid #737373;
-}
-
-QPushButton#UnloadModelBtn:disabled {
-    background-color: #0A0A0A;
-    color: #525252;
-    border: 1px solid #171717;
-}
 
 QPushButton.NormalBtn {
     background-color: #171717;
