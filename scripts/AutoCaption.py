@@ -11,6 +11,28 @@ import gc
 import threading
 import importlib.util
 
+def _inject_nvidia_dll_paths():
+    """Injects NVIDIA library paths (e.g. from pip packages) into DLL search paths"""
+    if sys.platform != "win32":
+        return
+    try:
+        import site
+        for sp in site.getsitepackages():
+            nvidia_path = os.path.join(sp, "nvidia")
+            if os.path.isdir(nvidia_path):
+                for dll_dir in ["cublas", "cudnn", "cufft", "curand", "cusolver", "cusparse"]:
+                    bin_path = os.path.join(nvidia_path, dll_dir, "bin")
+                    if os.path.isdir(bin_path):
+                        os.environ["PATH"] = bin_path + os.pathsep + os.environ.get("PATH", "")
+                        try:
+                            os.add_dll_directory(bin_path)
+                        except AttributeError:
+                            pass
+    except Exception:
+        pass
+
+_inject_nvidia_dll_paths()
+
 # Verify PySide6 is installed
 try:
     from PySide6 import QtWidgets, QtCore, QtGui
@@ -286,8 +308,11 @@ class Worker(QtCore.QObject):
                     self.log_signal.emit("Loading success")
                     self.model_ready_signal.emit(self.model)
                 except Exception as e:
-                    self.log_signal.emit(f"ERROR loading model: {e}")
-                    self.error_signal.emit(f"Failed to load model: {e}")
+                    error_msg = str(e)
+                    if "cublas" in error_msg.lower() or "cudnn" in error_msg.lower():
+                        error_msg += "\n\n[LỖI GPU]: Thiếu thư viện CUDA 12 (cublas/cudnn). \nVui lòng mở CMD/Terminal và chạy lệnh sau để cài đặt:\n👉 pip install nvidia-cublas-cu12 nvidia-cudnn-cu12"
+                    self.log_signal.emit(f"ERROR loading model: {error_msg}")
+                    self.error_signal.emit(f"Failed to load model: {error_msg}")
                     self.finished_signal.emit(False, [], [])
                     return
             else:
