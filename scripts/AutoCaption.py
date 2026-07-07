@@ -32,6 +32,22 @@ except ImportError:
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     from AutoCaption_logic import HAS_CUDA, MODEL_SIZES, transcribe, build_srt, save_srt
 
+SUPPORTED_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".wav", ".mp3", ".m4a"}
+
+def open_directory(path):
+    if path and os.path.isdir(path):
+        try:
+            if sys.platform == "win32":
+                os.startfile(path)
+            elif sys.platform == "darwin":
+                import subprocess
+                subprocess.Popen(["open", path])
+            else:
+                import subprocess
+                subprocess.Popen(["xdg-open", path])
+        except Exception:
+            pass
+
 def load_stylesheet():
     """Load styling from stylesheet file next to script"""
     css_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "AutoCaption.css")
@@ -160,19 +176,7 @@ class SuccessPopup(QtWidgets.QDialog):
         
     def on_open_folder(self):
         if self.saved_paths:
-            dir_path = os.path.dirname(self.saved_paths[0])
-            if os.path.isdir(dir_path):
-                try:
-                    if sys.platform == "win32":
-                        os.startfile(dir_path)
-                    elif sys.platform == "darwin":
-                        import subprocess
-                        subprocess.Popen(["open", dir_path])
-                    else:
-                        import subprocess
-                        subprocess.Popen(["xdg-open", dir_path])
-                except Exception:
-                    pass
+            open_directory(os.path.dirname(self.saved_paths[0]))
         self.accept()
 
 
@@ -186,8 +190,7 @@ class DropZoneFrame(QtWidgets.QFrame):
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             for url in event.mimeData().urls():
-                ext = os.path.splitext(url.toLocalFile())[1].lower()
-                if ext in [".mp4", ".avi", ".mov", ".mkv", ".wav", ".mp3", ".m4a"]:
+                if os.path.splitext(url.toLocalFile())[1].lower() in SUPPORTED_EXTS:
                     event.acceptProposedAction()
                     return
         event.ignore()
@@ -199,10 +202,8 @@ class DropZoneFrame(QtWidgets.QFrame):
         dropped_files = []
         for url in event.mimeData().urls():
             file_path = url.toLocalFile()
-            if os.path.isfile(file_path):
-                ext = os.path.splitext(file_path)[1].lower()
-                if ext in [".mp4", ".avi", ".mov", ".mkv", ".wav", ".mp3", ".m4a"]:
-                    dropped_files.append(file_path)
+            if os.path.isfile(file_path) and os.path.splitext(file_path)[1].lower() in SUPPORTED_EXTS:
+                dropped_files.append(file_path)
         if dropped_files:
             self.files_dropped.emit(dropped_files)
 
@@ -213,8 +214,9 @@ class Worker(QtCore.QObject):
     status_signal = QtCore.Signal(str)
     finished_signal = QtCore.Signal(bool, list)
     error_signal = QtCore.Signal(str)
+    model_ready_signal = QtCore.Signal(object)
 
-    def __init__(self, input_files, output_folder, save_same_folder, src_lang, model_size, device):
+    def __init__(self, input_files, output_folder, save_same_folder, src_lang, model_size, device, cached_model=None):
         super().__init__()
         self.input_files = input_files
         self.output_folder = output_folder
@@ -222,6 +224,7 @@ class Worker(QtCore.QObject):
         self.src_lang = src_lang
         self.model_size = model_size
         self.device = device
+        self.model = cached_model
         self.cancel_event = threading.Event()
 
     def run(self):
@@ -230,17 +233,21 @@ class Worker(QtCore.QObject):
             total_files = len(self.input_files)
             
             import gc
-            try:
-                from faster_whisper import WhisperModel
-                device_str = "cuda" if "GPU" in self.device else "cpu"
-                compute_type = "float16" if device_str == "cuda" else "int8"
-                self.log_signal.emit(f"Loading Whisper model '{self.model_size}' on {device_str.upper()} (Compute: {compute_type})...")
-                model = WhisperModel(self.model_size, device=device_str, compute_type=compute_type)
-            except Exception as e:
-                self.log_signal.emit(f"ERROR loading model: {e}")
-                self.error_signal.emit(f"Failed to load model: {e}")
-                self.finished_signal.emit(False, [])
-                return
+            if self.model is None:
+                try:
+                    from faster_whisper import WhisperModel
+                    device_str = "cuda" if "GPU" in self.device else "cpu"
+                    compute_type = "float16" if device_str == "cuda" else "int8"
+                    self.log_signal.emit(f"Loading Whisper model '{self.model_size}' on {device_str.upper()} (Compute: {compute_type})...")
+                    self.model = WhisperModel(self.model_size, device=device_str, compute_type=compute_type)
+                    self.model_ready_signal.emit(self.model)
+                except Exception as e:
+                    self.log_signal.emit(f"ERROR loading model: {e}")
+                    self.error_signal.emit(f"Failed to load model: {e}")
+                    self.finished_signal.emit(False, [])
+                    return
+            else:
+                self.log_signal.emit(f"Reusing cached Whisper model '{self.model_size}'...")
             
             for idx, input_file in enumerate(self.input_files):
                 if self.cancel_event.is_set():
@@ -261,7 +268,7 @@ class Worker(QtCore.QObject):
                 segments, detected = transcribe(
                     input_file, 
                     self.src_lang, 
-                    model, 
+                    self.model, 
                     self.log_signal.emit, 
                     self.cancel_event, 
                     make_progress_cb(idx, total_files)
@@ -282,7 +289,6 @@ class Worker(QtCore.QObject):
                     
                 self.progress_signal.emit(int(((idx + 1) * 100) / total_files))
                 
-            del model
             gc.collect()
             try:
                 import torch
@@ -307,6 +313,8 @@ class App(QtWidgets.QMainWindow):
         self._worker_thread = None
         self._worker = None
         self._input_files_list = []
+        self._cached_model = None
+        self._cached_model_key = None  # (model_size, device)
 
         self._setup_theme()
         self._build_ui()
@@ -356,6 +364,12 @@ class App(QtWidgets.QMainWindow):
         top_layout.addWidget(title)
         top_layout.addStretch()
         
+        self._btn_unload_model = QtWidgets.QPushButton("Unload Model")
+        self._btn_unload_model.setObjectName("UnloadModelBtn")
+        self._btn_unload_model.clicked.connect(self._unload_cached_model)
+        self._btn_unload_model.setEnabled(False)
+        top_layout.addWidget(self._btn_unload_model)
+
         self._btn_toggle_log = QtWidgets.QPushButton("Show Log")
         self._btn_toggle_log.setObjectName("ToggleLogBtn")
         self._btn_toggle_log.clicked.connect(self._toggle_log_panel)
@@ -751,6 +765,7 @@ class App(QtWidgets.QMainWindow):
         self._running = True
         self._btn_start.setEnabled(False)
         self._btn_cancel.setEnabled(True)
+        self._btn_unload_model.setEnabled(False)
         self._progress.setValue(0)
         self._log_text.clear()
 
@@ -759,7 +774,11 @@ class App(QtWidgets.QMainWindow):
         device = "cuda" if self._cmb_device.currentIndex() == 1 and HAS_CUDA else "cpu"
         save_same = self._chk_same_folder.isChecked()
 
-        self._worker = Worker(self._input_files_list, self._output_edit.text(), save_same, src_lang, model_size, device)
+        # If settings changed, unload the old cached model
+        if self._cached_model_key != (model_size, device):
+            self._unload_cached_model()
+
+        self._worker = Worker(self._input_files_list, self._output_edit.text(), save_same, src_lang, model_size, device, self._cached_model)
         self._worker_thread = QtCore.QThread()
         self._worker.moveToThread(self._worker_thread)
 
@@ -769,9 +788,36 @@ class App(QtWidgets.QMainWindow):
         self._worker.progress_signal.connect(self._on_progress)
         self._worker.finished_signal.connect(self._on_finished)
         self._worker.error_signal.connect(self._on_error)
+        self._worker.model_ready_signal.connect(self._on_model_ready)
 
-        self._status_label.setText(f"Initializing Whisper ({device.upper()})...")
+        if self._cached_model is None:
+            self._status_label.setText(f"Initializing Whisper ({device.upper()})...")
+        else:
+            self._status_label.setText(f"Starting Whisper transcription...")
+            
         self._worker_thread.start()
+
+    def _on_model_ready(self, model):
+        self._cached_model = model
+        model_size = self._cmb_model.currentText()
+        device = "cuda" if self._cmb_device.currentIndex() == 1 and HAS_CUDA else "cpu"
+        self._cached_model_key = (model_size, device)
+
+    def _unload_cached_model(self):
+        if self._cached_model is not None:
+            self._status_label.setText("Unloading model from memory...")
+            self._cached_model = None
+            self._cached_model_key = None
+            gc.collect()
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
+            self._btn_unload_model.setEnabled(False)
+            self._status_label.setText("Model unloaded.")
+            self._log_text.append("\n[System] Whisper model unloaded to free memory.")
 
     def _on_cancel(self):
         self._status_label.setText("Cancelling...")
@@ -780,6 +826,8 @@ class App(QtWidgets.QMainWindow):
         self._running = False
         self._btn_start.setEnabled(True)
         self._btn_cancel.setEnabled(False)
+        if self._cached_model is not None:
+            self._btn_unload_model.setEnabled(True)
 
     def _on_log(self, msg):
         self._log_text.append(msg)
@@ -805,6 +853,8 @@ class App(QtWidgets.QMainWindow):
         self._running = False
         self._btn_start.setEnabled(True)
         self._btn_cancel.setEnabled(False)
+        if self._cached_model is not None:
+            self._btn_unload_model.setEnabled(True)
 
         if success:
             self._status_label.setText("Finished successfully!")
@@ -815,24 +865,13 @@ class App(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Failed", "Process was cancelled or failed. Check the logs for details.")
 
     def _open_output_folder(self):
-        path = self._output_edit.text()
-        if path and os.path.isdir(path):
-            try:
-                if sys.platform == "win32":
-                    os.startfile(path)
-                elif sys.platform == "darwin":
-                    import subprocess
-                    subprocess.Popen(["open", path])
-                else:
-                    import subprocess
-                    subprocess.Popen(["xdg-open", path])
-            except Exception:
-                pass
+        open_directory(self._output_edit.text())
 
     def closeEvent(self, event):
         self._save_settings()
         if self._running:
             self._on_cancel()
+        self._unload_cached_model()
         event.accept()
 
 

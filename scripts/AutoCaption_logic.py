@@ -36,24 +36,29 @@ class SimpleSegment:
 
 def format_timestamp(seconds: float) -> str:
     """Convert seconds to SRT timestamp format: HH:MM:SS,mmm"""
-    if seconds < 0:
-        seconds = 0
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    millis = int(round((seconds - int(seconds)) * 1000))
+    total_millis = int(round(max(0.0, seconds) * 1000))
+    millis = total_millis % 1000
+    total_secs = total_millis // 1000
+    secs = total_secs % 60
+    total_mins = total_secs // 60
+    minutes = total_mins % 60
+    hours = total_mins // 60
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
-def transcribe(input_path, language, model, log_fn=print, cancel_event=None, progress_callback=None):
+def transcribe(input_path, language, model, log_fn=print, cancel_event=None, progress_callback=None, **kwargs):
     """Whisper transcription with incremental progress and cancellation check"""
     try:
         log_fn(f"Processing audio: {input_path}")
-        segments, info = model.transcribe(
-            input_path,
-            language=language if language and language != "auto" else None,
-            beam_size=5,
-            vad_filter=True
-        )
+        
+        # Default transcription options, allows overrides via kwargs
+        options = {
+            "language": language if language and language != "auto" else None,
+            "beam_size": 5,
+            "vad_filter": True
+        }
+        options.update(kwargs)
+        
+        segments, info = model.transcribe(input_path, **options)
         
         detected = info.language
         total_duration = info.duration
@@ -88,10 +93,10 @@ def transcribe(input_path, language, model, log_fn=print, cancel_event=None, pro
 
 def build_srt(segments):
     """Format segments list into standard SRT text"""
-    parts = []
-    for i, seg in enumerate(segments, 1):
-        parts.append(f"{i}\n{format_timestamp(seg.start)} --> {format_timestamp(seg.end)}\n{seg.text.strip()}\n")
-    return "\n".join(parts)
+    return "\n".join(
+        f"{i}\n{format_timestamp(seg.start)} --> {format_timestamp(seg.end)}\n{seg.text.strip()}\n"
+        for i, seg in enumerate(segments, 1)
+    )
 
 def save_srt(path, srt_text, log_fn=print):
     """Write SRT text to file"""
