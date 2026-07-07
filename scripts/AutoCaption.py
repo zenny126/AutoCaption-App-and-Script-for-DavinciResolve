@@ -257,7 +257,7 @@ class Worker(QtCore.QObject):
             import gc
             if self.model is None:
                 try:
-                    from faster_whisper import WhisperModel
+                    from faster_whisper import WhisperModel, download_model
                     import os
                     
                     device_str = "cuda" if "cuda" in self.device or "GPU" in self.device else "cpu"
@@ -267,15 +267,23 @@ class Worker(QtCore.QObject):
                     model_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model"))
                     os.makedirs(model_dir, exist_ok=True)
                     
-                    self.log_signal.emit(f"Loading Whisper model '{self.model_size}' on {device_str.upper()} (Compute: {compute_type})...")
-                    self.log_signal.emit("⏳ Đang kiểm tra model... (Nếu chưa có, phần mềm sẽ tự động tải về. Vui lòng đợi khoảng 2-10 phút tùy tốc độ mạng)")
+                    self.log_signal.emit(f"Loading {self.model_size} model...")
+                    
+                    try:
+                        download_model(self.model_size, cache_dir=model_dir, local_files_only=True)
+                    except Exception:
+                        self.log_signal.emit(f"{self.model_size} model missing")
+                        self.log_signal.emit("Downloading model...")
+                        download_model(self.model_size, cache_dir=model_dir)
+                        self.log_signal.emit("Download complete.")
+                        self.log_signal.emit(f"Loading {self.model_size} model...")
                     
                     # Ẩn thanh tiến trình (progress bar) của HuggingFace tải ngầm để tránh spam log/cmd
                     os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
                     
                     self.model = WhisperModel(self.model_size, device=device_str, compute_type=compute_type, download_root=model_dir)
                     
-                    self.log_signal.emit("✅ Tải model thành công!")
+                    self.log_signal.emit("Loading success")
                     self.model_ready_signal.emit(self.model)
                 except Exception as e:
                     self.log_signal.emit(f"ERROR loading model: {e}")
