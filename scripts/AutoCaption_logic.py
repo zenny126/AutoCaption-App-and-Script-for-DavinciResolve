@@ -5,9 +5,7 @@ AutoCaption Core Logic
 Handles Whisper audio transcription (local CPU/GPU) and SRT generation.
 """
 
-import sys
 import os
-import importlib.util
 
 # Disable Hugging Face symlinks warning on Windows
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"

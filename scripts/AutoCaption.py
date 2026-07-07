@@ -10,7 +10,6 @@ import os
 import gc
 import threading
 import importlib.util
-from PySide6 import QtWidgets, QtCore, QtGui
 
 # Verify PySide6 is installed
 try:
@@ -236,7 +235,7 @@ class Worker(QtCore.QObject):
             if self.model is None:
                 try:
                     from faster_whisper import WhisperModel
-                    device_str = "cuda" if "GPU" in self.device else "cpu"
+                    device_str = "cuda" if "cuda" in self.device or "GPU" in self.device else "cpu"
                     compute_type = "float16" if device_str == "cuda" else "int8"
                     self.log_signal.emit(f"Loading Whisper model '{self.model_size}' on {device_str.upper()} (Compute: {compute_type})...")
                     self.model = WhisperModel(self.model_size, device=device_str, compute_type=compute_type)

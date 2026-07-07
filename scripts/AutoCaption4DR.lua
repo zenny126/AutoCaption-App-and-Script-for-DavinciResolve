@@ -9,7 +9,7 @@
 
 resolve = Resolve()
 local isWindows = FuPLATFORM_WINDOWS
-local PYTHON_EXE = "python"
+local PYTHON_EXE = isWindows and "python" or "python3"
 local MODEL = "large-v3-turbo"
 
 -- ============================================================
@@ -23,6 +23,7 @@ local function fileExists(p)
 end
 
 local function runPs1(script)
+    if not isWindows then return "" end
     local tmpPs1 = os.getenv("TEMP") .. "\\autocaption_tmp.ps1"
     local tmpOut = os.getenv("TEMP") .. "\\autocaption_tmp_result.txt"
     local f = io.open(tmpPs1, "w")
@@ -125,7 +126,7 @@ try:
 except Exception as e:
     print(f"ERROR: {e}")
 ]]
-    local tmpPy = os.getenv("TEMP") .. "\\autocaption_runner.py"
+    local tmpPy = isWindows and (os.getenv("TEMP") .. "\\autocaption_runner.py") or "/tmp/autocaption_runner.py"
     local f = io.open(tmpPy, "w")
     if f then f:write(pyCode); f:close() end
 
